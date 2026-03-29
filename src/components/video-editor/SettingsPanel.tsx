@@ -274,16 +274,16 @@ const WEBCAM_POSITION_PRESETS: Array<{
 	preset: Exclude<WebcamPositionPreset, "custom">;
 	label: string;
 }> = [
-	{ preset: "top-left", label: "↖" },
-	{ preset: "top-center", label: "↑" },
-	{ preset: "top-right", label: "↗" },
-	{ preset: "center-left", label: "←" },
-	{ preset: "center", label: "•" },
-	{ preset: "center-right", label: "→" },
-	{ preset: "bottom-left", label: "↙" },
-	{ preset: "bottom-center", label: "↓" },
-	{ preset: "bottom-right", label: "↘" },
-];
+		{ preset: "top-left", label: "↖" },
+		{ preset: "top-center", label: "↑" },
+		{ preset: "top-right", label: "↗" },
+		{ preset: "center-left", label: "←" },
+		{ preset: "center", label: "•" },
+		{ preset: "center-right", label: "→" },
+		{ preset: "bottom-left", label: "↙" },
+		{ preset: "bottom-center", label: "↓" },
+		{ preset: "bottom-right", label: "↘" },
+	];
 
 const CURSOR_STYLE_OPTIONS: Array<{ value: CursorStyle; label: string }> = [
 	{ value: "tahoe", label: "Tahoe" },
@@ -401,9 +401,9 @@ function trimCanvasToAlpha(canvas: HTMLCanvasElement, hotspot?: { x: number; y: 
 		height: croppedHeight,
 		hotspot: hotspot
 			? {
-					x: hotspot.x - minX,
-					y: hotspot.y - minY,
-				}
+				x: hotspot.x - minX,
+				y: hotspot.y - minY,
+			}
 			: undefined,
 	};
 }
@@ -632,8 +632,6 @@ export function SettingsPanel({
 	onMasterAudioVolumeChange,
 	onMasterAudioMutedChange,
 	onMasterAudioSoloedChange,
-	autoSuggestZoomsTrigger,
-	onAutoSuggestZoomsConsumed,
 }: SettingsPanelProps) {
 	const tSettings = useScopedT("settings");
 	const { t } = useI18n();
@@ -733,10 +731,10 @@ export function SettingsPanel({
 				const tahoeAsset = uploadedCursorAssets.arrow;
 				const tahoePreview = tahoeAsset
 					? await createTrimmedSvgPreview(
-							tahoeAsset.url,
-							UPLOADED_CURSOR_SAMPLE_SIZE,
-							tahoeAsset.trim,
-						)
+						tahoeAsset.url,
+						UPLOADED_CURSOR_SAMPLE_SIZE,
+						tahoeAsset.trim,
+					)
 					: tahoeCursorUrl;
 				const minimalPreview = await createTrimmedSvgPreview(minimalCursorUrl, 512);
 				const invertedPreview = await createInvertedPreview(tahoePreview);
@@ -1193,9 +1191,9 @@ export function SettingsPanel({
 											onClick={() => customColorInputRef.current?.click()}
 											className={wallpaperTileClass(
 												isHexWallpaper(wallpaper) &&
-													!visibleColorPalette.some(
-														(color) => color.toLowerCase() === wallpaper.toLowerCase(),
-													),
+												!visibleColorPalette.some(
+													(color) => color.toLowerCase() === wallpaper.toLowerCase(),
+												),
 											)}
 											style={{
 												background: `linear-gradient(135deg, ${selectedColor} 0%, ${selectedColor} 58%, rgba(255,255,255,0.92) 58%, rgba(255,255,255,0.92) 100%)`,
@@ -1855,12 +1853,12 @@ export function SettingsPanel({
 					return (
 						<AudioSettingsPanel
 							audio={masterAudioMock}
-							onVolumeChange={onMasterAudioVolumeChange || (() => {})}
-							onMutedChange={onMasterAudioMutedChange || (() => {})}
-							onSoloedChange={onMasterAudioSoloedChange || (() => {})}
-							onFadeInMsChange={() => {}}
-							onFadeOutMsChange={() => {}}
-							onDelete={() => {}}
+							onVolumeChange={onMasterAudioVolumeChange || (() => { })}
+							onMutedChange={onMasterAudioMutedChange || (() => { })}
+							onSoloedChange={onMasterAudioSoloedChange || (() => { })}
+							onFadeInMsChange={() => { }}
+							onFadeOutMsChange={() => { }}
+							onDelete={() => { }}
 						/>
 					);
 				}
