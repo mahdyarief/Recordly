@@ -1,5 +1,0 @@
-src/components/video-editor/VideoEditor.tsx
-src/components/video-editor/projectPersistence.ts
-src/components/video-editor/timeline/Item.tsx
-src/components/video-editor/timeline/Row.tsx
-src/components/video-editor/timeline/TimelineEditor.tsx
