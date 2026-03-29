@@ -143,8 +143,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 interface SettingsPanelProps {
 	panelMode?: "editor" | "background";
 	activeEffectSection?: EditorEffectSection;
-	selected: string;
+	wallpaper: string;
 	onWallpaperChange: (path: string) => void;
+	autoSuggestZoomsTrigger?: number;
+	onAutoSuggestZoomsConsumed?: () => void;
 	selectedZoomDepth?: ZoomDepth | null;
 	onZoomDepthChange?: (depth: ZoomDepth) => void;
 	selectedZoomId?: string | null;
@@ -539,7 +541,7 @@ function CursorStylePreview({
 export function SettingsPanel({
 	panelMode = "editor",
 	activeEffectSection: activeEffectSectionProp,
-	selected,
+	wallpaper,
 	onWallpaperChange,
 	selectedZoomDepth,
 	onZoomDepthChange,
@@ -630,6 +632,8 @@ export function SettingsPanel({
 	onMasterAudioVolumeChange,
 	onMasterAudioMutedChange,
 	onMasterAudioSoloedChange,
+	autoSuggestZoomsTrigger,
+	onAutoSuggestZoomsConsumed,
 }: SettingsPanelProps) {
 	const tSettings = useScopedT("settings");
 	const { t } = useI18n();
@@ -704,14 +708,14 @@ export function SettingsPanel({
 	];
 
 	const [selectedColor, setSelectedColor] = useState(
-		isHexWallpaper(selected) ? selected : "#ADADAD",
+		isHexWallpaper(wallpaper) ? wallpaper : "#ADADAD",
 	);
 	const [gradient, setGradient] = useState<string>(
-		GRADIENTS.includes(selected) ? selected : GRADIENTS[0],
+		GRADIENTS.includes(wallpaper) ? wallpaper : GRADIENTS[0],
 	);
 	const removeBackgroundEnabled = aspectRatio === "native" && padding === 0;
 	const [backgroundTab, setBackgroundTab] = useState<BackgroundTab>(() =>
-		getBackgroundTabForWallpaper(selected),
+		getBackgroundTabForWallpaper(wallpaper),
 	);
 	const customColorInputRef = useRef<HTMLInputElement | null>(null);
 	const defaultWebcam = initialEditorPreferences.webcam;
@@ -761,20 +765,20 @@ export function SettingsPanel({
 	}, []);
 
 	useEffect(() => {
-		setBackgroundTab(getBackgroundTabForWallpaper(selected));
+		setBackgroundTab(getBackgroundTabForWallpaper(wallpaper));
 
-		if (isHexWallpaper(selected)) {
-			setSelectedColor(selected);
+		if (isHexWallpaper(wallpaper)) {
+			setSelectedColor(wallpaper);
 		}
 
-		if (GRADIENTS.includes(selected)) {
-			setGradient(selected);
+		if (GRADIENTS.includes(wallpaper)) {
+			setGradient(wallpaper);
 		}
 
-		if (selected.startsWith("data:image") && !customImages.includes(selected)) {
-			setCustomImages((prev) => [selected, ...prev]);
+		if (wallpaper.startsWith("data:image") && !customImages.includes(wallpaper)) {
+			setCustomImages((prev) => [wallpaper, ...prev]);
 		}
-	}, [customImages, selected]);
+	}, [customImages, wallpaper]);
 
 	useEffect(() => {
 		saveEditorPreferences({ customWallpapers: customImages });
@@ -805,14 +809,14 @@ export function SettingsPanel({
 	const webcamPositionY = webcam?.positionY ?? DEFAULT_WEBCAM_POSITION_Y;
 
 	const getWallpaperTileState = (candidateValue: string, previewPath?: string) => {
-		if (!selected) return false;
-		if (selected === candidateValue || (previewPath && selected === previewPath)) return true;
+		if (!wallpaper) return false;
+		if (wallpaper === candidateValue || (previewPath && wallpaper === previewPath)) return true;
 		try {
 			const clean = (s: string) => s.replace(/^file:\/\//, "").replace(/^\//, "");
-			if (clean(selected).endsWith(clean(candidateValue))) return true;
-			if (clean(candidateValue).endsWith(clean(selected))) return true;
-			if (previewPath && clean(selected).endsWith(clean(previewPath))) return true;
-			if (previewPath && clean(previewPath).endsWith(clean(selected))) return true;
+			if (clean(wallpaper).endsWith(clean(candidateValue))) return true;
+			if (clean(candidateValue).endsWith(clean(wallpaper))) return true;
+			if (previewPath && clean(wallpaper).endsWith(clean(previewPath))) return true;
+			if (previewPath && clean(previewPath).endsWith(clean(wallpaper))) return true;
 		} catch {
 			return false;
 		}
@@ -1019,7 +1023,7 @@ export function SettingsPanel({
 		event.stopPropagation();
 		setCustomImages((prev) => prev.filter((img) => img !== imageUrl));
 		// If the removed image was selected, clear selection
-		if (selected === imageUrl) {
+		if (wallpaper === imageUrl) {
 			onWallpaperChange(builtInWallpaperPaths[0] ?? BUILT_IN_WALLPAPERS[0]?.publicPath ?? "");
 		}
 	};
@@ -1169,7 +1173,7 @@ export function SettingsPanel({
 									/>
 									<div className="grid grid-cols-8 gap-1.5">
 										{visibleColorPalette.map((color) => {
-											const isSelected = selected.toLowerCase() === color.toLowerCase();
+											const isSelected = wallpaper.toLowerCase() === color.toLowerCase();
 											return (
 												<button
 													key={color}
@@ -1188,9 +1192,9 @@ export function SettingsPanel({
 											type="button"
 											onClick={() => customColorInputRef.current?.click()}
 											className={wallpaperTileClass(
-												isHexWallpaper(selected) &&
+												isHexWallpaper(wallpaper) &&
 													!visibleColorPalette.some(
-														(color) => color.toLowerCase() === selected.toLowerCase(),
+														(color) => color.toLowerCase() === wallpaper.toLowerCase(),
 													),
 											)}
 											style={{

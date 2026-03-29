@@ -3798,7 +3798,6 @@ export default function VideoEditor() {
 						panelMode="editor"
 						activeEffectSection={activeEffectSection}
 						onAutoSuggestZooms={handleAutoSuggestZooms}
-						selected={selectedZoomId ? "zoom" : selectedTrimId ? "trim" : selectedSpeedId ? "speed" : selectedAnnotationId ? "annotation" : selectedAudioId ? "audio" : isMasterSelected ? "master-audio" : undefined}
 						wallpaper={wallpaper}
 						onWallpaperChange={setWallpaper}
 						selectedZoomDepth={
