@@ -5,17 +5,17 @@
   "helpers": {
     "wgc-capture": {
       "binaryName": "wgc-capture.exe",
-      "binarySha256": "5f364b07b016c597288f90a9b61c581e6559d6d32b79ffadceb37859bbea8dd2",
+      "binarySha256": "013164c0a1391d334e5aa2fe0ff2e47b507407e36c7e44e7333a70a84b944643",
       "sourceDir": "electron/native/wgc-capture",
       "sourceFingerprint": "9e9bce082266ca5968cf5f0b535b469d47c4ec3a775a93726171c0dfdbcdaa44",
-      "updatedAt": "2026-03-28T05:48:46.587Z"
+      "updatedAt": "2026-03-29T02:15:34.516Z"
     },
     "cursor-monitor": {
       "binaryName": "cursor-monitor.exe",
-      "binarySha256": "916ed064c12a3b861d7721df8b9209d10ec0fdb8078564a2ba3ea8cf4f4354c4",
+      "binarySha256": "b0732abc06998a40c3e95078465ad750a6169901944571c39cfd7996effe39c0",
       "sourceDir": "electron/native/cursor-monitor",
       "sourceFingerprint": "6ad1b8b50bb336f2a48937b06f5ec56d90b6ab4a3e56a4bca278cf67a5d3e52e",
-      "updatedAt": "2026-03-28T05:17:17.697Z"
+      "updatedAt": "2026-03-29T02:15:38.286Z"
     }
   }
 }
