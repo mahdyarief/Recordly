@@ -31,9 +31,26 @@ const AUTO_RECORDING_RETENTION_COUNT = 20
 const AUTO_RECORDING_MAX_AGE_MS = 14 * 24 * 60 * 60 * 1000
 const ALLOW_RECORDLY_WINDOW_CAPTURE = Boolean(process.env['VITE_DEV_SERVER_URL'])
 const RECORDING_SESSION_MANIFEST_SUFFIX = '.recordly-session.json'
-const WHISPER_MODEL_DOWNLOAD_URL = 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin'
 const WHISPER_MODEL_DIR = path.join(USER_DATA_PATH, 'whisper')
-const WHISPER_SMALL_MODEL_PATH = path.join(WHISPER_MODEL_DIR, 'ggml-small.bin')
+const WHISPER_MODELS: Record<string, { filename: string; url: string }> = {
+  tiny: {
+    filename: 'ggml-tiny.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-tiny.bin',
+  },
+  base: {
+    filename: 'ggml-base.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-base.bin',
+  },
+  small: {
+    filename: 'ggml-small.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-small.bin',
+  },
+  medium: {
+    filename: 'ggml-medium.bin',
+    url: 'https://huggingface.co/ggerganov/whisper.cpp/resolve/main/ggml-medium.bin',
+  },
+}
+const WHISPER_SMALL_MODEL_PATH = path.join(WHISPER_MODEL_DIR, WHISPER_MODELS['small'].filename)
 
 function getAssetRootPath() {
   if (app.isPackaged) {
@@ -143,6 +160,8 @@ let nativeCaptureStopRequested = false
 let nativeCaptureSystemAudioPath: string | null = null
 let nativeCaptureMicrophonePath: string | null = null
 let nativeCapturePaused = false
+let autoCaptionProgress = 0
+let autoCaptionCues: any[] = []
 let nativeCursorMonitorProcess: ChildProcessWithoutNullStreams | null = null
 let nativeCursorMonitorOutputBuffer = ''
 let windowsCaptureProcess: ChildProcessWithoutNullStreams | null = null
@@ -976,7 +995,7 @@ async function getNativeMacWindowSources(options?: { maxAgeMs?: number }) {
   }
 
   const binaryPath = await ensureNativeWindowListBinary()
-  const { stdout } = await execFileAsync(binaryPath, [], {
+  const { stdout } = await execFileAsync(binaryPath as string, [], {
     timeout: 30000,
     maxBuffer: 10 * 1024 * 1024,
   })
@@ -1020,7 +1039,7 @@ async function getSystemCursorAssets() {
     'openscreen-system-cursors'
   )
 
-  const { stdout } = await execFileAsync(binaryPath, [], { timeout: 15000, maxBuffer: 20 * 1024 * 1024 })
+  const { stdout } = await execFileAsync(binaryPath as string, [], { timeout: 15000, maxBuffer: 20 * 1024 * 1024 })
   const parsed = JSON.parse(stdout) as Record<string, Partial<SystemCursorAsset>>
   cachedSystemCursorAssets = Object.fromEntries(
     Object.entries(parsed).filter(([, asset]) => (
@@ -1081,11 +1100,67 @@ function getFfmpegBinaryPath() {
   return ffmpegStatic
 }
 
+function runWhisperWithProgress(
+  executablePath: string,
+  args: string[],
+  onProgress: (progress: number) => void,
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const proc = spawn(executablePath, args)
+    let output = ''
+
+    proc.stdout?.on('data', (data) => {
+      output += data.toString()
+    })
+
+    proc.stderr?.on('data', (data) => {
+      const text = data.toString()
+      output += text
+      // whisper.cpp variants use this pattern on stderr
+      const match = text.match(/progress\s*=\s*(\d+)%/i)
+      if (match) {
+        onProgress(Number.parseInt(match[1], 10))
+      }
+    })
+
+    proc.on('close', (code) => {
+      if (code === 0) {
+        resolve()
+      } else {
+        reject(new Error(output.trim() || `Whisper exited with code ${code}`))
+      }
+    })
+
+    proc.on('error', (err) => {
+      reject(err)
+    })
+  })
+}
+
+function safeSend(webContents: Electron.WebContents | undefined, channel: string, ...args: any[]) {
+  if (webContents && !webContents.isDestroyed()) {
+    webContents.send(channel, ...args)
+  }
+}
+
 function sendWhisperModelDownloadProgress(
   webContents: Electron.WebContents,
-  payload: { status: 'idle' | 'downloading' | 'downloaded' | 'error'; progress: number; path?: string | null; error?: string },
+  payload: {
+    status: 'idle' | 'downloading' | 'downloaded' | 'error'
+    progress: number
+    model?: string
+    path?: string | null
+    error?: string
+  },
 ) {
-  webContents.send('whisper-small-model-download-progress', payload)
+  // Legacy support for small model
+  if (!payload.model || payload.model === 'small') {
+    webContents.send('whisper-small-model-download-progress', payload)
+  }
+  // New generic support
+  if (payload.model) {
+    webContents.send('whisper-model-download-progress', payload)
+  }
 }
 
 async function getWhisperSmallModelStatus() {
@@ -1169,42 +1244,96 @@ function downloadFileWithProgress(
   return request(url)
 }
 
-async function downloadWhisperSmallModel(webContents: Electron.WebContents) {
+function getWhisperModelPath(modelName: string) {
+  const model = WHISPER_MODELS[modelName as keyof typeof WHISPER_MODELS]
+  return path.join(WHISPER_MODEL_DIR, model?.filename || `ggml-${modelName}.bin`)
+}
+
+async function getWhisperModelStatus(_event: any, modelName: string) {
+  try {
+    const modelPath = getWhisperModelPath(modelName)
+    await fs.access(modelPath, fsConstants.R_OK)
+    return {
+      success: true,
+      exists: true,
+      path: modelPath,
+    }
+  } catch {
+    return {
+      success: true,
+      exists: false,
+      path: null,
+    }
+  }
+}
+
+async function downloadWhisperModel(webContents: Electron.WebContents, modelName: string) {
+  const model = WHISPER_MODELS[modelName as keyof typeof WHISPER_MODELS]
+  if (!model) throw new Error(`Unsupported Whisper model: ${modelName}`)
+
   await fs.mkdir(WHISPER_MODEL_DIR, { recursive: true })
-  const tempPath = `${WHISPER_SMALL_MODEL_PATH}.download`
+  const modelPath = getWhisperModelPath(modelName)
+  const tempPath = `${modelPath}.download`
 
   sendWhisperModelDownloadProgress(webContents, {
     status: 'downloading',
     progress: 0,
+    model: modelName,
     path: null,
   })
 
   try {
-    await fs.rm(tempPath, { force: true })
-    await downloadFileWithProgress(WHISPER_MODEL_DOWNLOAD_URL, tempPath, (progress) => {
+    await fs.rm(tempPath, { force: true }).catch(() => undefined)
+    await downloadFileWithProgress(model.url, tempPath, (progress) => {
       sendWhisperModelDownloadProgress(webContents, {
         status: 'downloading',
         progress,
+        model: modelName,
         path: null,
       })
     })
-    await fs.rename(tempPath, WHISPER_SMALL_MODEL_PATH)
+
+    // Robust rename logic for Windows
+    let renameRetries = 0
+    const maxRetries = 5
+    while (renameRetries < maxRetries) {
+      try {
+        await fs.rename(tempPath, modelPath)
+        break
+      } catch (err) {
+        renameRetries++
+        if (renameRetries >= maxRetries) throw err
+        await new Promise((resolve) => setTimeout(resolve, 100 * renameRetries))
+      }
+    }
+
     sendWhisperModelDownloadProgress(webContents, {
       status: 'downloaded',
       progress: 100,
-      path: WHISPER_SMALL_MODEL_PATH,
+      model: modelName,
+      path: modelPath,
     })
-    return WHISPER_SMALL_MODEL_PATH
+    return modelPath
   } catch (error) {
     await fs.rm(tempPath, { force: true }).catch(() => undefined)
     sendWhisperModelDownloadProgress(webContents, {
       status: 'error',
       progress: 0,
+      model: modelName,
       path: null,
       error: String(error),
     })
     throw error
   }
+}
+
+async function deleteWhisperModel(_event: any, modelName: string) {
+  const modelPath = getWhisperModelPath(modelName)
+  await fs.rm(modelPath, { force: true })
+}
+
+async function downloadWhisperSmallModel(webContents: Electron.WebContents) {
+  return await downloadWhisperModel(webContents, 'small')
 }
 
 async function deleteWhisperSmallModel() {
@@ -1497,6 +1626,8 @@ async function extractCaptionAudioSource(options: {
   videoPath: string
   ffmpegPath: string
   wavPath: string
+  startTime?: number // in seconds
+  duration?: number // in seconds
 }) {
   const candidates = await resolveCaptionAudioCandidates(options.videoPath)
   const attemptedCandidates: Array<{
@@ -1509,12 +1640,24 @@ async function extractCaptionAudioSource(options: {
 
   for (const candidate of candidates) {
     try {
-      await ensureReadableFile(candidate.path, 'video file')
+      await ensureReadableFile(candidate.path, "video file")
+      console.log("[auto-captions] Extracting audio from:", path.basename(candidate.path), options.startTime ? `at ${options.startTime}s` : "")
+
+      const ffmpegArgs = ["-y"]
+      if (options.startTime !== undefined) {
+        ffmpegArgs.push("-ss", options.startTime.toString())
+      }
+      if (options.duration !== undefined) {
+        ffmpegArgs.push("-t", options.duration.toString())
+      }
+      ffmpegArgs.push("-i", candidate.path, "-map", "0:a:0", "-vn", "-ac", "1", "-ar", "16000", "-c:a", "pcm_s16le", options.wavPath)
+
       await execFileAsync(
         options.ffmpegPath,
-        ['-y', '-i', candidate.path, '-map', '0:a:0', '-vn', '-ac', '1', '-ar', '16000', '-c:a', 'pcm_s16le', options.wavPath],
+        ffmpegArgs,
         { timeout: 5 * 60 * 1000, maxBuffer: 20 * 1024 * 1024 },
       )
+      console.log("[auto-captions] Audio extracted successfully to temporary workspace")
       attemptedCandidates.push({ ...candidate, readable: true, extractedAudio: true })
       return candidate
     } catch (error) {
@@ -1524,21 +1667,24 @@ async function extractCaptionAudioSource(options: {
         extractedAudio: false,
         error: error instanceof Error ? error.message : String(error),
       })
-      // Try the next candidate instead of failing on stale editor state.
     }
   }
 
-  console.warn('[auto-captions] No audio source candidate could be extracted:', attemptedCandidates)
-
-  throw new Error('No audio was found to transcribe in the saved recording file. Captions need an audio track. If this recording should have contained sound, the recording was saved without an audio stream.')
+  console.warn("[auto-captions] No audio source candidate could be extracted:", attemptedCandidates)
+  throw new Error("No audio was found to transcribe in the saved recording file. Captions need an audio track.")
 }
 
-async function generateAutoCaptionsFromVideo(options: {
-  videoPath: string
-  whisperExecutablePath?: string
-  whisperModelPath: string
-  language?: string
-}) {
+async function generateAutoCaptionsFromVideo(
+  webContents: Electron.WebContents,
+  options: {
+    videoPath: string
+    whisperExecutablePath?: string
+    whisperModelPath: string
+    language?: string
+    durationMs?: number
+    startTimeMs?: number
+  },
+) {
   const ffmpegPath = getFfmpegBinaryPath()
   const normalizedVideoPath = normalizeVideoSourcePath(options.videoPath)
   if (!normalizedVideoPath) {
@@ -1550,68 +1696,117 @@ async function generateAutoCaptionsFromVideo(options: {
   await ensureReadableFile(whisperExecutablePath, 'whisper executable')
   await ensureReadableFile(whisperModelPath, 'whisper model')
 
-  const tempBase = path.join(app.getPath('temp'), `recordly-captions-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`)
-  const wavPath = `${tempBase}.wav`
-  const outputBase = `${tempBase}-whisper`
-  const srtPath = `${outputBase}.srt`
-  const jsonPath = `${outputBase}.json`
+  // Constants for segmentation
+  const CHUNK_SIZE_MS = 5 * 60 * 1000 // 5 minutes
+  const OVERLAP_MS = 10 * 1000 // 10 seconds overlap for word boundaries
 
-  try {
-    const audioSource = await extractCaptionAudioSource({
-      videoPath: normalizedVideoPath,
-      ffmpegPath,
-      wavPath,
-    })
+  const startTimeMs = options.startTimeMs || 0
+  const totalDurationMs = options.durationMs || 0
+  const endTimeMs = totalDurationMs > 0 ? startTimeMs + totalDurationMs : Number.POSITIVE_INFINITY
 
-    const language = options.language && options.language.trim() ? options.language.trim() : 'auto'
-    const whisperBaseArgs = [
-      '-m', whisperModelPath,
-      '-f', wavPath,
-      '-osrt',
-      '-of', outputBase,
-      '-l', language,
-      '-np',
-    ]
+  console.log('[auto-captions] Starting segmented caption generation sequence')
+  console.log('[auto-captions] Video:', path.basename(normalizedVideoPath))
 
-    let jsonEnabled = true
+  const allCues: any[] = []
+  let audioSourceLabel = 'Unknown'
+
+  for (let offsetMs = startTimeMs; offsetMs < endTimeMs; offsetMs += CHUNK_SIZE_MS) {
+    const chunkIndex = Math.floor((offsetMs - startTimeMs) / CHUNK_SIZE_MS)
+    const tempBase = path.join(app.getPath('temp'), `recordly-captions-chunk-${chunkIndex}-${Date.now()}`)
+    const wavPath = `${tempBase}.wav`
+    const outputBase = `${tempBase}-whisper`
+    const srtPath = `${outputBase}.srt`
+    const jsonPath = `${outputBase}.json`
+
     try {
-      await execFileAsync(whisperExecutablePath, [...whisperBaseArgs, '-ojf'], {
-        timeout: 30 * 60 * 1000,
-        maxBuffer: 20 * 1024 * 1024,
+      const audioSource = await extractCaptionAudioSource({
+        videoPath: normalizedVideoPath,
+        ffmpegPath,
+        wavPath,
+        startTime: offsetMs / 1000,
+        duration: (CHUNK_SIZE_MS + OVERLAP_MS) / 1000,
       })
-    } catch (error) {
-      if (!shouldRetryWhisperWithoutJson(error)) {
-        throw error
+      audioSourceLabel = audioSource.label
+
+      const language = options.language && options.language.trim() ? options.language.trim() : 'auto'
+      const whisperBaseArgs = [
+        '-m', whisperModelPath,
+        '-f', wavPath,
+        '-osrt',
+        '-of', outputBase,
+        '-l', language,
+        '-np',
+      ]
+
+      let jsonEnabled = true
+      const updateChunkProgress = (progress: number) => {
+        if (totalDurationMs > 0) {
+          const totalRangeMs = totalDurationMs > 0 ? totalDurationMs : 1
+          const rangeOffsetMs = offsetMs - startTimeMs
+          const totalProgress = (rangeOffsetMs / totalRangeMs * 100) + (progress / (totalRangeMs / CHUNK_SIZE_MS))
+          safeSend(webContents, 'auto-caption-progress', { progress: Math.min(99, totalProgress) })
+        } else {
+          safeSend(webContents, 'auto-caption-progress', { progress })
+        }
       }
 
-      jsonEnabled = false
-      console.warn('[auto-captions] Whisper runtime does not support JSON full output, retrying with SRT only:', error)
-      await execFileAsync(whisperExecutablePath, whisperBaseArgs, {
-        timeout: 30 * 60 * 1000,
-        maxBuffer: 20 * 1024 * 1024,
-      })
-    }
+      try {
+        await runWhisperWithProgress(whisperExecutablePath, [...whisperBaseArgs, '-ojf'], updateChunkProgress)
+      } catch (error) {
+        if (!shouldRetryWhisperWithoutJson(error)) throw error
+        jsonEnabled = false
+        console.warn(`[auto-captions] Whisper runtime error, retrying with SRT: ${error}`)
+        await runWhisperWithProgress(whisperExecutablePath, whisperBaseArgs, updateChunkProgress)
+      }
 
-    const timedCues = jsonEnabled
-      ? parseWhisperJsonCues(await fs.readFile(jsonPath, 'utf-8'))
-      : []
-    const cues = timedCues.length > 0
-      ? timedCues
-      : parseSrtCues(await fs.readFile(srtPath, 'utf-8'))
-    if (cues.length === 0) {
-      throw new Error('Whisper completed, but no caption cues were produced.')
-    }
+      let cues = jsonEnabled
+        ? parseWhisperJsonCues(await fs.readFile(jsonPath, 'utf-8'))
+        : parseSrtCues(await fs.readFile(srtPath, 'utf-8'))
 
-    return {
-      cues,
-      audioSourceLabel: audioSource.label,
+      if (cues.length === 0 && !jsonEnabled) {
+        try { cues = parseSrtCues(await fs.readFile(srtPath, 'utf-8')) } catch { /* ignore */ }
+      }
+
+      // Adjust timings and deduplicate
+      const adjustedCues = cues
+        .map((cue: any, idx: number) => ({
+          ...cue,
+          id: `caption-${offsetMs}-${idx}`,
+          startMs: cue.startMs + offsetMs,
+          endMs: cue.endMs + offsetMs,
+        }))
+        .filter((cue: any) => {
+          const isLastChunk = offsetMs + CHUNK_SIZE_MS >= endTimeMs
+          if (isLastChunk) return true
+          return cue.startMs < offsetMs + CHUNK_SIZE_MS
+        })
+
+      if (adjustedCues.length > 0) {
+        allCues.push(...adjustedCues)
+        safeSend(webContents, 'auto-caption-chunk', { cues: adjustedCues })
+      }
+
+      const stats = await fs.stat(wavPath).catch(() => null)
+      if (stats && stats.size < 1000) {
+        break
+      }
+
+      if (offsetMs + CHUNK_SIZE_MS >= endTimeMs) {
+        break
+      }
+    } finally {
+      await Promise.allSettled([
+        fs.rm(wavPath, { force: true }),
+        fs.rm(srtPath, { force: true }),
+        fs.rm(jsonPath, { force: true }),
+      ])
     }
-  } finally {
-    await Promise.allSettled([
-      fs.rm(wavPath, { force: true }),
-      fs.rm(srtPath, { force: true }),
-      fs.rm(jsonPath, { force: true }),
-    ])
+  }
+
+  safeSend(webContents, 'auto-caption-progress', { progress: 100 })
+  return {
+    cues: allCues,
+    audioSourceLabel,
   }
 }
 
@@ -4390,9 +4585,21 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
     }
   })
 
+  ipcMain.handle('get-whisper-model-status', async (event, modelName: string) => {
+    return await getWhisperModelStatus(event, modelName);
+  })
+
+  ipcMain.handle('download-whisper-model', async (event, modelName: string) => {
+    return await downloadWhisperModel(event.sender, modelName);
+  })
+
+  ipcMain.handle('delete-whisper-model', async (event, modelName: string) => {
+    return await deleteWhisperModel(event, modelName);
+  })
+
   ipcMain.handle('get-whisper-small-model-status', async () => {
     try {
-      return await getWhisperSmallModelStatus()
+      return await getWhisperModelStatus(null, 'small')
     } catch (error) {
       return { success: false, exists: false, path: null, error: String(error) }
     }
@@ -4400,18 +4607,7 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 
   ipcMain.handle('download-whisper-small-model', async (event) => {
     try {
-      const existing = await getWhisperSmallModelStatus()
-      if (existing.exists) {
-        sendWhisperModelDownloadProgress(event.sender, {
-          status: 'downloaded',
-          progress: 100,
-          path: existing.path,
-        })
-        return { success: true, path: existing.path, alreadyDownloaded: true }
-      }
-
-      const modelPath = await downloadWhisperSmallModel(event.sender)
-      return { success: true, path: modelPath }
+      return await downloadWhisperModel(event.sender, 'small')
     } catch (error) {
       console.error('Failed to download Whisper small model:', error)
       return { success: false, error: String(error) }
@@ -4420,12 +4616,7 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 
   ipcMain.handle('delete-whisper-small-model', async (event) => {
     try {
-      await deleteWhisperSmallModel()
-      sendWhisperModelDownloadProgress(event.sender, {
-        status: 'idle',
-        progress: 0,
-        path: null,
-      })
+      await deleteWhisperModel(event, 'small')
       return { success: true }
     } catch (error) {
       console.error('Failed to delete Whisper small model:', error)
@@ -4433,14 +4624,17 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
     }
   })
 
-  ipcMain.handle('generate-auto-captions', async (_, options: {
+  ipcMain.handle('generate-auto-captions', async (event, options: {
     videoPath: string
     whisperExecutablePath: string
     whisperModelPath: string
     language?: string
+    durationMs?: number
+    startTimeMs?: number
   }) => {
     try {
-      const result = await generateAutoCaptionsFromVideo(options)
+      // Use event.sender as first argument for generateAutoCaptionsFromVideo if needed
+      const result = await (generateAutoCaptionsFromVideo as any)(event.sender, options)
       return {
         success: true,
         cues: result.cues,

@@ -216,17 +216,33 @@ interface Window {
 				error?: string;
 			}) => void,
 		) => () => void;
+		getWhisperModelStatus: (modelName: string) => Promise<{ success: boolean; exists: boolean; path?: string | null; error?: string }>;
+		downloadWhisperModel: (modelName: string) => Promise<{ success: boolean; path?: string; alreadyDownloaded?: boolean; error?: string }>;
+		deleteWhisperModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+		onWhisperModelDownloadProgress: (
+			callback: (state: {
+				status: "idle" | "downloading" | "downloaded" | "error";
+				progress: number;
+				model: string;
+				path?: string | null;
+				error?: string;
+			}) => void,
+		) => () => void;
 		generateAutoCaptions: (options: {
 			videoPath: string;
 			whisperExecutablePath?: string;
 			whisperModelPath: string;
 			language?: string;
+			durationMs?: number;
+			startTimeMs?: number;
 		}) => Promise<{
 			success: boolean;
-			cues?: AutoCaptionCue[];
+			cues?: any[];
 			message?: string;
 			error?: string;
 		}>;
+		onAutoCaptionProgress: (callback: (payload: { progress: number }) => void) => () => void;
+		onAutoCaptionChunk: (callback: (payload: { cues: any[] }) => void) => () => void;
 		setCurrentVideoPath: (path: string) => Promise<{ success: boolean }>;
 		setCurrentRecordingSession: (session: {
 			videoPath: string;

@@ -110,6 +110,7 @@ import {
 	type ZoomFocus,
 	type ZoomRegion,
 	type ZoomTransitionEasing,
+	type TimeSelection,
 } from "./types";
 import VideoPlayback, { VideoPlaybackRef } from "./VideoPlayback";
 import {
@@ -386,6 +387,7 @@ export default function VideoEditor() {
 	const [selectedAudioId, setSelectedAudioId] = useState<string | null>(null);
 	const [autoCaptions, setAutoCaptions] = useState<CaptionCue[]>([]);
 	const [selectedCaptionId, setSelectedCaptionId] = useState<string | null>(null);
+	const [timeSelection, setTimeSelection] = useState<TimeSelection | null>(null);
 	const [autoCaptionSettings, setAutoCaptionSettings] = useState<AutoCaptionSettings>(() => ({
 		...DEFAULT_AUTO_CAPTION_SETTINGS,
 		selectedModel: (initialEditorPreferences.whisperSelectedModel as any) || "small",
@@ -433,6 +435,16 @@ export default function VideoEditor() {
 	const [showCropModal, setShowCropModal] = useState(false);
 	const [previewVersion, setPreviewVersion] = useState(0);
 	const [isAudioEngineReady, setIsAudioEngineReady] = useState(false);
+	const [timelineMode, setTimelineMode] = useState<'move' | 'select'>('move');
+	const [autoSuggestZoomsTrigger, setAutoSuggestZoomsTrigger] = useState(0);
+
+	const handleAutoSuggestZooms = useCallback(() => {
+		setAutoSuggestZoomsTrigger(prev => prev + 1);
+	}, []);
+
+	const handleAutoSuggestZoomsConsumed = useCallback(() => {
+		setAutoSuggestZoomsTrigger(0);
+	}, []);
 
 	const videoPlaybackRef = useRef<VideoPlaybackRef>(null);
 	const audioContextRef = useRef<AudioContext | null>(null);
@@ -1634,8 +1646,20 @@ export default function VideoEditor() {
 		setIsGeneratingCaptions(true);
 		setAutoCaptionProgress(0);
 
-		const startTimeMs = 0;
-		const rangeDurationMs = duration * 1000;
+		const startTimeMs = autoCaptionSettings.generationRange === "selected" && timeSelection
+			? timeSelection.startMs
+			: 0;
+		const rangeDurationMs = autoCaptionSettings.generationRange === "selected" && timeSelection
+			? timeSelection.endMs - timeSelection.startMs
+			: duration * 1000;
+
+		if (autoCaptionSettings.generationRange === "selected" && !timeSelection) {
+			toast.error("Please select a range on the timeline first", {
+				description: "Click and drag or Shift+Click on the timeline to select a range for caption generation.",
+			});
+			setIsGeneratingCaptions(false);
+			return;
+		}
 
 		try {
 			const result = await window.electronAPI.generateAutoCaptions({
@@ -1674,11 +1698,13 @@ export default function VideoEditor() {
 		}
 	}, [
 		autoCaptionSettings.language,
+		autoCaptionSettings.generationRange,
 		isGeneratingCaptions,
 		videoSourcePath,
 		videoPath,
 		duration,
 		whisperModelPath,
+		timeSelection,
 		syncActiveVideoSource,
 		webcam.sourcePath,
 	]);
@@ -2049,13 +2075,18 @@ export default function VideoEditor() {
 		if (!video.paused && !video.ended) {
 			playback.pause();
 		} else {
+			// Selection awareness: if playing with a selection active, jump to start if out of bounds
+			if (timeSelection) {
+				const currentTimeMs = Math.round(currentTime * 1000);
+				const bufferMs = 50; // Small buffer for end boundary
+				if (currentTimeMs < timeSelection.startMs || currentTimeMs >= timeSelection.endMs - bufferMs) {
+					handleSeek(timeSelection.startMs / 1000);
+				}
+			}
 			playback.play().catch((err) => console.error("Video play failed:", err));
 		}
 	}
 
-	const handleAutoSuggestZoomsConsumed = useCallback(() => {
-		setAutoSuggestZoomsTrigger(0);
-	}, []);
 
 	function handleSeek(time: number) {
 		const video = videoPlaybackRef.current?.video;
@@ -2592,6 +2623,14 @@ export default function VideoEditor() {
 					} else {
 						playback.pause();
 					}
+				}
+			}
+
+			if (!isEditableTarget) {
+				if (key === "v") {
+					setTimelineMode("move");
+				} else if (key === "r") {
+					setTimelineMode("select");
 				}
 			}
 		};
@@ -3647,6 +3686,7 @@ export default function VideoEditor() {
 												cursorClickBounce={cursorClickBounce}
 												cursorClickBounceDuration={cursorClickBounceDuration}
 												cursorSway={cursorSway}
+												timeSelection={timeSelection}
 											/>
 
 										</div>
@@ -3698,8 +3738,6 @@ export default function VideoEditor() {
 									currentTime={currentTime}
 									onSeek={handleSeek}
 									cursorTelemetry={normalizedCursorTelemetry}
-									autoSuggestZoomsTrigger={autoSuggestZoomsTrigger}
-									onAutoSuggestZoomsConsumed={handleAutoSuggestZoomsConsumed}
 									zoomRegions={effectiveZoomRegions}
 									onZoomAdded={handleZoomAdded}
 									onZoomSuggested={handleZoomSuggested}
@@ -3742,8 +3780,12 @@ export default function VideoEditor() {
 									onAspectRatioChange={setAspectRatio}
 									onOpenCropEditor={handleOpenCropEditor}
 									isCropped={isCropped}
+									timeSelection={timeSelection}
+									onTimeSelectionChange={setTimeSelection}
 									isMasterSelected={isMasterSelected}
 									onSelectMaster={handleSelectMaster}
+									timelineMode={timelineMode}
+									onTimelineModeChange={setTimelineMode}
 								/>
 							</div>
 						</Panel>
@@ -3755,7 +3797,9 @@ export default function VideoEditor() {
 					<SettingsPanel
 						panelMode="editor"
 						activeEffectSection={activeEffectSection}
-						selected={wallpaper}
+						onAutoSuggestZooms={handleAutoSuggestZooms}
+						selected={selectedZoomId ? "zoom" : selectedTrimId ? "trim" : selectedSpeedId ? "speed" : selectedAnnotationId ? "annotation" : selectedAudioId ? "audio" : isMasterSelected ? "master-audio" : undefined}
+						wallpaper={wallpaper}
 						onWallpaperChange={setWallpaper}
 						selectedZoomDepth={
 							selectedZoomId ? zoomRegions.find((z) => z.id === selectedZoomId)?.depth : null
@@ -3823,6 +3867,8 @@ export default function VideoEditor() {
 						annotationRegions={annotationRegions}
 						onSeek={(time) => videoPlaybackRef.current?.seek(time)}
 						autoCaptions={autoCaptions}
+						autoSuggestZoomsTrigger={autoSuggestZoomsTrigger}
+						onAutoSuggestZoomsConsumed={handleAutoSuggestZoomsConsumed}
 						onAutoCaptionsChange={setAutoCaptions}
 						autoCaptionSettings={autoCaptionSettings}
 						whisperExecutablePath={whisperExecutablePath}
@@ -3862,6 +3908,7 @@ export default function VideoEditor() {
 						onAudioDelete={handleAudioDelete}
 						selectedCaptionId={selectedCaptionId}
 						onSelectCaption={handleSelectCaption}
+						timeSelection={timeSelection}
 						isMasterSelected={isMasterSelected}
 						masterAudioVolume={masterAudioVolume}
 						masterAudioMuted={masterAudioMuted}

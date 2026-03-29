@@ -244,6 +244,7 @@ interface SettingsPanelProps {
 	onAudioFadeInMsChange?: (id: string, ms: number) => void;
 	onAudioFadeOutMsChange?: (id: string, ms: number) => void;
 	onAudioDelete?: (id: string) => void;
+	timeSelection?: { startMs: number; endMs: number } | null;
 	isMasterSelected?: boolean;
 	masterAudioVolume?: number;
 	masterAudioMuted?: boolean;
@@ -253,6 +254,7 @@ interface SettingsPanelProps {
 	onMasterAudioVolumeChange?: (volume: number) => void;
 	onMasterAudioMutedChange?: (muted: boolean) => void;
 	onMasterAudioSoloedChange?: (soloed: boolean) => void;
+	onAutoSuggestZooms?: () => void;
 }
 
 export default SettingsPanel;
@@ -618,6 +620,7 @@ export function SettingsPanel({
 	onAudioFadeInMsChange,
 	onAudioFadeOutMsChange,
 	onAudioDelete,
+	timeSelection,
 	isMasterSelected,
 	masterAudioVolume = 1,
 	masterAudioMuted = false,
@@ -1547,7 +1550,36 @@ export function SettingsPanel({
 						</Button>
 					</div>
 				</div>
-
+				<div className="flex flex-col gap-3 pt-1">
+					<div className="flex flex-col gap-1.5 px-1">
+						<SectionLabel>Generation Range</SectionLabel>
+						<ToggleGroup
+							type="single"
+							value={autoCaptionSettings?.generationRange || "full"}
+							onValueChange={(val) =>
+								val &&
+								onAutoCaptionSettingsChange?.({
+									...autoCaptionSettings!,
+									generationRange: val as any,
+								})
+							}
+							className="justify-start gap-1"
+						>
+							<ToggleGroupItem
+								value="full"
+								className="h-7 cursor-pointer rounded-lg border border-white/5 bg-white/5 px-2.5 text-[10px] data-[state=on]:border-blue-500/50 data-[state=on]:bg-blue-500/20 data-[state=on]:text-blue-400"
+							>
+								Full Video
+							</ToggleGroupItem>
+							<ToggleGroupItem
+								value="selected"
+								className="h-7 cursor-pointer rounded-lg border border-white/5 bg-white/5 px-2.5 text-[10px] data-[state=on]:border-blue-500/50 data-[state=on]:bg-blue-500/20 data-[state=on]:text-blue-400"
+							>
+								Selected Timeline {timeSelection ? `(${(timeSelection.startMs / 1000).toFixed(1)}s - ${(timeSelection.endMs / 1000).toFixed(1)}s)` : ""}
+							</ToggleGroupItem>
+						</ToggleGroup>
+					</div>
+				</div>
 				<div className="flex flex-col gap-2">
 					<Button
 						type="button"

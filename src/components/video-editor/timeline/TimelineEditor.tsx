@@ -7,7 +7,7 @@ import {
   DropdownMenuItem,
   DropdownMenuTrigger,
 } from "@/components/ui/dropdown-menu";
-import { Plus, Scissors, ZoomIn, MessageSquare, ChevronDown, Check, Gauge, WandSparkles, Music, Crop } from "lucide-react";
+import { Plus, Scissors, ZoomIn, MessageSquare, ChevronDown, Check, Gauge, WandSparkles, Music, Crop, MousePointer2, BoxSelect } from "lucide-react";
 import { toast } from "sonner";
 import { cn } from "@/lib/utils";
 import { v4 as uuidv4 } from 'uuid';
@@ -23,7 +23,7 @@ import Row from "./Row";
 import Item from "./Item";
 import KeyframeMarkers from "./KeyframeMarkers";
 import type { Range, Span } from "dnd-timeline";
-import type { ZoomRegion, TrimRegion, AnnotationRegion, SpeedRegion, AudioRegion, CursorTelemetryPoint, ZoomFocus, CaptionCue } from "../types";
+import type { ZoomRegion, TrimRegion, AnnotationRegion, SpeedRegion, AudioRegion, CursorTelemetryPoint, ZoomFocus, CaptionCue, TimeSelection } from "../types";
 import { toFileUrl } from "../projectPersistence";
 import { detectInteractionCandidates, normalizeCursorTelemetry } from "./zoomSuggestionUtils";
 
@@ -37,6 +37,7 @@ const CAPTION_ROW_ID = "row-caption";
 const FALLBACK_RANGE_MS = 1000;
 const TARGET_MARKER_COUNT = 12;
 const SUGGESTION_SPACING_MS = 1800;
+const DRAG_THRESHOLD_PX = 5;
 
 interface TimelineEditorProps {
   videoDuration: number;
@@ -44,8 +45,6 @@ interface TimelineEditorProps {
   currentTime: number;
   onSeek?: (time: number) => void;
   cursorTelemetry?: CursorTelemetryPoint[];
-  autoSuggestZoomsTrigger?: number;
-  onAutoSuggestZoomsConsumed?: () => void;
   disableSuggestedZooms?: boolean;
   zoomRegions: ZoomRegion[];
   onZoomAdded: (span: Span) => void;
@@ -97,8 +96,14 @@ interface TimelineEditorProps {
   onAspectRatioChange: (aspectRatio: AspectRatio) => void;
   onOpenCropEditor?: () => void;
   isCropped?: boolean;
+  timeSelection?: TimeSelection | null;
+  onTimeSelectionChange?: (selection: TimeSelection | null) => void;
   isMasterSelected?: boolean;
   onSelectMaster?: (selected: boolean) => void;
+  timelineMode?: 'move' | 'select';
+  onTimelineModeChange?: (mode: 'move' | 'select') => void;
+  autoSuggestZoomsTrigger?: number;
+  onAutoSuggestZoomsConsumed?: () => void;
 }
 
 interface TimelineScaleConfig {
@@ -235,12 +240,14 @@ function PlaybackCursor({
   onSeek,
   timelineRef,
   keyframes = [],
+  timeSelection = null,
 }: {
   currentTimeMs: number;
   videoDurationMs: number;
   onSeek?: (time: number) => void;
   timelineRef: React.RefObject<HTMLDivElement>;
   keyframes?: { id: string; time: number }[];
+  timeSelection?: import('../types').TimeSelection | null;
 }) {
 
   const { sidebarWidth = 0, direction, range, valueToPixels, pixelsToValue } = useTimelineContext();
@@ -276,14 +283,26 @@ function PlaybackCursor({
       onSeek(absoluteMs / 1000);
     };
 
-    const handleMouseUp = () => {
+    const handleMouseUp = (e: MouseEvent) => {
+      if (isDragging && timeSelection && onSeek) {
+        const rect = timelineRef.current?.getBoundingClientRect();
+        if (rect) {
+          const clickX = e.clientX - rect.left - sidebarWidth;
+          const relativeMs = pixelsToValue(clickX);
+          const absoluteMs = Math.max(0, Math.min(range.start + relativeMs, videoDurationMs));
+          
+          // If released outside selection, jump back to selection start
+          if (absoluteMs < timeSelection.startMs || absoluteMs > timeSelection.endMs) {
+            onSeek(timeSelection.startMs / 1000);
+          }
+        }
+      }
       setIsDragging(false);
       document.body.style.cursor = "";
     };
 
     window.addEventListener("mousemove", handleMouseMove);
     window.addEventListener("mouseup", handleMouseUp);
-
     document.body.style.cursor = "ew-resize";
 
     return () => {
@@ -506,8 +525,11 @@ function Timeline({
   selectAllBlocksActive = false,
   onClearBlockSelection,
   keyframes = [],
+  timeSelection,
+  onTimeSelectionChange,
   isMasterSelected = false,
   onSelectMaster,
+  timelineMode = 'move',
 }: {
   items: TimelineRenderItem[];
   videoDurationMs: number;
@@ -539,10 +561,13 @@ function Timeline({
   selectAllBlocksActive?: boolean;
   onClearBlockSelection?: () => void;
   keyframes?: { id: string; time: number }[];
+  timeSelection?: TimeSelection | null;
+  onTimeSelectionChange?: (selection: TimeSelection | null) => void;
   isMasterSelected?: boolean;
   onSelectMaster?: (selected: boolean) => void;
+  timelineMode?: 'move' | 'select';
 }) {
-  const { setTimelineRef, style, sidebarWidth = 0, range, pixelsToValue } = useTimelineContext();
+  const { setTimelineRef, style, sidebarWidth = 0, range, pixelsToValue, valueToPixels } = useTimelineContext();
   const localTimelineRef = useRef<HTMLDivElement | null>(null);
 
   const setRefs = useCallback(
@@ -555,15 +580,116 @@ function Timeline({
     [setTimelineRef],
   );
 
-  const handleMouseDown = useCallback(() => {
-    // Background clicks are handled as seeking.
-    // Dragging items is handled by dnd-timeline.
-  }, []);
+  const isDraggingSelectionRef = useRef(false);
+  const selectionAnchorMsRef = useRef<number | null>(null);
+  const selectionCurrentMsRef = useRef<number | null>(null);
+  const initialMouseDownPosRef = useRef<{ x: number; y: number } | null>(null);
+
+
+  const handleMouseDown = useCallback(
+    (e: React.MouseEvent<HTMLDivElement>) => {
+      // In Move mode, the timeline background never starts a selection drag.
+      // Items handle their own drag-and-drop via dnd-timeline.
+      if (timelineMode !== 'select') return;
+
+      if (videoDurationMs <= 0) return;
+
+      // Capture the rect NOW — e.currentTarget becomes null after React's
+      // synthetic event is processed and must not be read inside async closures.
+      const capturedRect = e.currentTarget.getBoundingClientRect();
+      const clickX = e.clientX - capturedRect.left - sidebarWidth;
+
+      if (clickX < 0) return;
+
+      const relativeMs = pixelsToValue(clickX);
+      const absoluteMs = Math.max(0, Math.min(range.start + relativeMs, videoDurationMs));
+
+      initialMouseDownPosRef.current = { x: e.clientX, y: e.clientY };
+      isDraggingSelectionRef.current = false; // Reset drag flag
+
+      if (e.shiftKey) {
+        // Shift+mousedown: anchor to the far edge of the existing selection,
+        // or to the current playhead if there is no selection yet.
+        let anchor = currentTimeMs;
+        if (timeSelection) {
+          const distToStart = Math.abs(timeSelection.startMs - absoluteMs);
+          const distToEnd = Math.abs(timeSelection.endMs - absoluteMs);
+          anchor = distToStart > distToEnd ? timeSelection.startMs : timeSelection.endMs;
+        }
+
+        selectionAnchorMsRef.current = anchor;
+        const start = Math.min(anchor, absoluteMs);
+        const end = Math.max(anchor, absoluteMs);
+        onTimeSelectionChange?.({ startMs: start, endMs: end });
+      } else {
+        // Plain drag: anchor starts at the click point itself
+        selectionAnchorMsRef.current = absoluteMs;
+        selectionCurrentMsRef.current = absoluteMs;
+        onTimeSelectionChange?.({ startMs: absoluteMs, endMs: absoluteMs });
+      }
+
+
+      const handleGlobalMouseMove = (moveEvent: MouseEvent) => {
+        if (selectionAnchorMsRef.current === null || initialMouseDownPosRef.current === null) return;
+
+        const dx = Math.abs(moveEvent.clientX - initialMouseDownPosRef.current.x);
+        const dy = Math.abs(moveEvent.clientY - initialMouseDownPosRef.current.y);
+
+        if (dx > DRAG_THRESHOLD_PX || dy > DRAG_THRESHOLD_PX) {
+          isDraggingSelectionRef.current = true;
+        }
+
+        // Use the captured rect — safe to read from an async listener
+        const moveX = moveEvent.clientX - capturedRect.left - sidebarWidth;
+        const moveRelativeMs = pixelsToValue(moveX);
+        const moveAbsoluteMs = Math.max(0, Math.min(range.start + moveRelativeMs, videoDurationMs));
+        selectionCurrentMsRef.current = moveAbsoluteMs;
+
+
+        const start = Math.min(selectionAnchorMsRef.current, moveAbsoluteMs);
+        const end = Math.max(selectionAnchorMsRef.current, moveAbsoluteMs);
+
+        onTimeSelectionChange?.({ startMs: start, endMs: end });
+      };
+
+      const handleGlobalMouseUp = () => {
+        if (isDraggingSelectionRef.current && selectionAnchorMsRef.current !== null && selectionCurrentMsRef.current !== null) {
+          // When finished dragging a selection, jump playhead to the start of selection
+          const start = Math.min(selectionAnchorMsRef.current, selectionCurrentMsRef.current);
+          onSeek?.(start / 1000);
+        }
+
+        selectionAnchorMsRef.current = null;
+        selectionCurrentMsRef.current = null;
+        initialMouseDownPosRef.current = null;
+        window.removeEventListener("mousemove", handleGlobalMouseMove);
+        window.removeEventListener("mouseup", handleGlobalMouseUp);
+      };
+
+
+
+      window.addEventListener("mousemove", handleGlobalMouseMove);
+      window.addEventListener("mouseup", handleGlobalMouseUp);
+    },
+    [timelineMode, range.start, sidebarWidth, pixelsToValue, videoDurationMs, onTimeSelectionChange, timeSelection, currentTimeMs],
+  );
 
 
   const handleTimelineClick = useCallback(
     (e: React.MouseEvent<HTMLDivElement>) => {
+      // If a selection-drag occurred (only possible in Select mode), swallow the click
+      if (isDraggingSelectionRef.current) {
+        isDraggingSelectionRef.current = false;
+        return;
+      }
+
       if (!onSeek || videoDurationMs <= 0) return;
+
+      // In Select mode, shift+click updates the selection (already done in mousedown) — don't seek
+      if (timelineMode === 'select' && e.shiftKey) return;
+
+      // Plain click: deselect all blocks, then seek and clear time selection
+      onTimeSelectionChange?.(null);
 
       onSelectZoom?.(null);
       onSelectTrim?.(null);
@@ -584,7 +710,7 @@ function Timeline({
 
       onSeek(absoluteMs / 1000);
     },
-    [onSeek, onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption, videoDurationMs, sidebarWidth, range.start, pixelsToValue, onClearBlockSelection],
+    [timelineMode, onSeek, onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption, videoDurationMs, sidebarWidth, range.start, pixelsToValue, onTimeSelectionChange, onClearBlockSelection],
   );
 
 
@@ -709,7 +835,7 @@ function Timeline({
             ? "bg-amber-500/20 border-amber-500/50 text-amber-400"
             : "bg-white/5 border-white/10 text-white/50 hover:bg-white/10 hover:text-white"
         )}
-        title="Solo Audio Track"
+        title="Solo All Audio"
       >
         S
       </button>
@@ -727,7 +853,16 @@ function Timeline({
       onMouseDown={handleMouseDown}
       onClick={handleTimelineClick}
     >
-
+      {timeSelection && (
+        <div
+          className="absolute top-0 bottom-0 bg-blue-500/20 border-x border-blue-500/50 z-20 pointer-events-none"
+          style={{
+            left: `${sidebarWidth + valueToPixels(Math.max(range.start, timeSelection.startMs) - range.start)}px`,
+            width: `${valueToPixels(Math.min(range.end, timeSelection.endMs) - Math.max(range.start, timeSelection.startMs))}px`,
+            display: (timeSelection.endMs < range.start || timeSelection.startMs > range.end) ? 'none' : 'block'
+          }}
+        />
+      )}
       <div className="absolute inset-0 bg-[linear-gradient(to_right,#ffffff03_1px,transparent_1px)] bg-[length:20px_100%] pointer-events-none" />
       <TimelineAxis videoDurationMs={videoDurationMs} currentTimeMs={currentTimeMs} />
       <PlaybackCursor
@@ -736,6 +871,7 @@ function Timeline({
         onSeek={onSeek}
         timelineRef={localTimelineRef}
         keyframes={keyframes}
+        timeSelection={timeSelection}
       />
 
 
@@ -751,6 +887,7 @@ function Timeline({
               onSelect={() => onSelectZoom?.(item.id)}
               zoomDepth={item.zoomDepth}
               variant="zoom"
+              timelineMode={timelineMode}
             >
               {item.label}
             </Item>
@@ -767,6 +904,7 @@ function Timeline({
               isSelected={selectAllBlocksActive || item.id === selectedTrimId}
               onSelect={() => onSelectTrim?.(item.id)}
               variant="trim"
+              timelineMode={timelineMode}
             >
               {item.label}
             </Item>
@@ -787,6 +925,7 @@ function Timeline({
               isSelected={selectAllBlocksActive || item.id === selectedAnnotationId}
               onSelect={() => onSelectAnnotation?.(item.id)}
               variant="annotation"
+              timelineMode={timelineMode}
             >
               {item.label}
             </Item>
@@ -804,6 +943,7 @@ function Timeline({
               onSelect={() => onSelectSpeed?.(item.id)}
               variant="speed"
               speedValue={item.speedValue}
+              timelineMode={timelineMode}
             >
               {item.label}
             </Item>
@@ -830,6 +970,7 @@ function Timeline({
               isDraggable={false}
               isResizable={false}
               muted={item.muted}
+              timelineMode={timelineMode}
             >
               {item.label}
             </Item>
@@ -850,6 +991,7 @@ function Timeline({
               muted={item.muted}
               fadeInMs={item.fadeInMs}
               fadeOutMs={item.fadeOutMs}
+              timelineMode={timelineMode}
             >
               {item.label}
             </Item>
@@ -881,8 +1023,6 @@ export default function TimelineEditor({
   currentTime,
   onSeek,
   cursorTelemetry = [],
-  autoSuggestZoomsTrigger = 0,
-  onAutoSuggestZoomsConsumed,
   disableSuggestedZooms = false,
   zoomRegions,
   onZoomAdded,
@@ -935,6 +1075,12 @@ export default function TimelineEditor({
   onAspectRatioChange,
   onOpenCropEditor,
   isCropped = false,
+  timeSelection,
+  onTimeSelectionChange,
+  timelineMode = 'move',
+  onTimelineModeChange,
+  autoSuggestZoomsTrigger = 0,
+  onAutoSuggestZoomsConsumed,
 }: TimelineEditorProps) {
   const t = useScopedT("settings");
   const initialEditorPreferences = useMemo(() => loadEditorPreferences(), []);
@@ -1120,8 +1266,9 @@ export default function TimelineEditor({
       onSelectSpeed?.(null);
       onSelectAudio?.(null);
       onSelectCaption?.(null);
+      onTimeSelectionChange?.(null);
     }
-  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption]);
+  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption, onTimeSelectionChange]);
 
   const handleSelectTrim = useCallback((id: string | null) => {
     setSelectAllBlocksActive(false);
@@ -1132,8 +1279,9 @@ export default function TimelineEditor({
       onSelectSpeed?.(null);
       onSelectAudio?.(null);
       onSelectCaption?.(null);
+      onTimeSelectionChange?.(null);
     }
-  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption]);
+  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption, onTimeSelectionChange]);
 
   const handleSelectAnnotation = useCallback((id: string | null) => {
     setSelectAllBlocksActive(false);
@@ -1144,8 +1292,9 @@ export default function TimelineEditor({
       onSelectSpeed?.(null);
       onSelectAudio?.(null);
       onSelectCaption?.(null);
+      onTimeSelectionChange?.(null);
     }
-  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption]);
+  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption, onTimeSelectionChange]);
 
   const handleSelectSpeed = useCallback((id: string | null) => {
     setSelectAllBlocksActive(false);
@@ -1156,8 +1305,9 @@ export default function TimelineEditor({
       onSelectAnnotation?.(null);
       onSelectAudio?.(null);
       onSelectCaption?.(null);
+      onTimeSelectionChange?.(null);
     }
-  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption]);
+  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption, onTimeSelectionChange]);
 
   const handleSelectAudio = useCallback((id: string | null) => {
     setSelectAllBlocksActive(false);
@@ -1168,8 +1318,9 @@ export default function TimelineEditor({
       onSelectAnnotation?.(null);
       onSelectSpeed?.(null);
       onSelectCaption?.(null);
+      onTimeSelectionChange?.(null);
     }
-  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption]);
+  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption, onTimeSelectionChange]);
 
   const handleSelectCaption = useCallback((id: string | null) => {
     setSelectAllBlocksActive(false);
@@ -1180,8 +1331,9 @@ export default function TimelineEditor({
       onSelectAnnotation?.(null);
       onSelectSpeed?.(null);
       onSelectAudio?.(null);
+      onTimeSelectionChange?.(null);
     }
-  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption]);
+  }, [onSelectZoom, onSelectTrim, onSelectAnnotation, onSelectSpeed, onSelectAudio, onSelectCaption, onTimeSelectionChange]);
 
   useEffect(() => {
     setRange(createInitialRange(totalMs));
@@ -1332,13 +1484,19 @@ export default function TimelineEditor({
     const nextRegion = sorted.find(region => region.startMs > startPos);
     const gapToNext = nextRegion ? nextRegion.startMs - startPos : totalMs - startPos;
 
-    const actualDuration = Math.min(defaultRegionDurationMs, gapToNext);
+    const actualDuration = timeSelection
+      ? timeSelection.endMs - timeSelection.startMs
+      : Math.min(defaultRegionDurationMs, gapToNext);
 
-    const finalStart = startPos;
-    const finalEnd = startPos + actualDuration;
+    const finalStart = timeSelection ? timeSelection.startMs : startPos;
+    const finalEnd = timeSelection ? timeSelection.endMs : startPos + actualDuration;
 
     onZoomAdded({ start: finalStart, end: finalEnd });
-  }, [videoDuration, totalMs, currentTimeMs, zoomRegions, onZoomAdded, defaultRegionDurationMs]);
+
+    if (timeSelection) {
+      onTimeSelectionChange?.(null);
+    }
+  }, [videoDuration, totalMs, currentTimeMs, zoomRegions, onZoomAdded, defaultRegionDurationMs, timeSelection, onTimeSelectionChange]);
 
   const handleSuggestZooms = useCallback(() => {
     if (!videoDuration || videoDuration === 0 || totalMs === 0) {
@@ -1447,8 +1605,6 @@ export default function TimelineEditor({
 
     handleSuggestZooms();
   }, [autoSuggestZoomsTrigger, handleSuggestZooms, onAutoSuggestZoomsConsumed]);
-
-
   const handleAddTrim = useCallback(() => {
     if (!videoDuration || videoDuration === 0 || totalMs === 0 || !onTrimAdded) {
       return;
@@ -1465,14 +1621,19 @@ export default function TimelineEditor({
     const nextRegion = sorted.find(region => region.startMs > startPos);
     const gapToNext = nextRegion ? nextRegion.startMs - startPos : totalMs - startPos;
 
-    const actualDuration = Math.min(defaultRegionDurationMs, gapToNext);
+    const actualDuration = timeSelection
+      ? timeSelection.endMs - timeSelection.startMs
+      : Math.min(defaultRegionDurationMs, gapToNext);
 
-    const finalStart = startPos;
-    const finalEnd = startPos + actualDuration;
+    const finalStart = timeSelection ? timeSelection.startMs : startPos;
+    const finalEnd = timeSelection ? timeSelection.endMs : startPos + actualDuration;
 
     onTrimAdded({ start: finalStart, end: finalEnd });
-  }, [videoDuration, totalMs, currentTimeMs, trimRegions, onTrimAdded, defaultRegionDurationMs]);
 
+    if (timeSelection) {
+      onTimeSelectionChange?.(null);
+    }
+  }, [videoDuration, totalMs, currentTimeMs, trimRegions, onTrimAdded, defaultRegionDurationMs, timeSelection, onTimeSelectionChange]);
   const handleAddSpeed = useCallback(() => {
     if (!videoDuration || videoDuration === 0 || totalMs === 0 || !onSpeedAdded) {
       return;
@@ -1489,13 +1650,19 @@ export default function TimelineEditor({
     const nextRegion = sorted.find(region => region.startMs > startPos);
     const gapToNext = nextRegion ? nextRegion.startMs - startPos : totalMs - startPos;
 
-    const actualDuration = Math.min(defaultRegionDurationMs, gapToNext);
+    const actualDuration = timeSelection
+      ? timeSelection.endMs - timeSelection.startMs
+      : Math.min(defaultRegionDurationMs, gapToNext);
 
-    const finalStart = startPos;
-    const finalEnd = startPos + actualDuration;
+    const finalStart = timeSelection ? timeSelection.startMs : startPos;
+    const finalEnd = timeSelection ? timeSelection.endMs : startPos + actualDuration;
 
     onSpeedAdded({ start: finalStart, end: finalEnd });
-  }, [videoDuration, totalMs, currentTimeMs, speedRegions, onSpeedAdded, defaultRegionDurationMs]);
+
+    if (timeSelection) {
+      onTimeSelectionChange?.(null);
+    }
+  }, [videoDuration, totalMs, currentTimeMs, speedRegions, onSpeedAdded, defaultRegionDurationMs, timeSelection, onTimeSelectionChange]);
 
   const handleAddAudio = useCallback(async () => {
     if (!videoDuration || videoDuration === 0 || totalMs === 0 || !onAudioAdded) {
@@ -1527,7 +1694,7 @@ export default function TimelineEditor({
       return;
     }
 
-    const startPos = Math.max(0, Math.min(currentTimeMs, totalMs));
+    const startPos = timeSelection ? timeSelection.startMs : Math.max(0, Math.min(currentTimeMs, totalMs));
     const sorted = [...audioRegions].sort((a, b) => a.startMs - b.startMs);
     const nextRegion = sorted.find(region => region.startMs > startPos);
     const gapToNext = nextRegion ? nextRegion.startMs - startPos : totalMs - startPos;
@@ -1541,9 +1708,13 @@ export default function TimelineEditor({
     }
 
     // Use full audio duration, but clamp to available gap and video length
-    const actualDuration = Math.min(audioDurationMs, gapToNext, totalMs - startPos);
+    const actualDuration = timeSelection ? (timeSelection.endMs - timeSelection.startMs) : Math.min(audioDurationMs, gapToNext, totalMs - startPos);
     onAudioAdded({ start: startPos, end: startPos + actualDuration }, result.path);
-  }, [videoDuration, totalMs, currentTimeMs, audioRegions, onAudioAdded]);
+
+    if (timeSelection) {
+      onTimeSelectionChange?.(null);
+    }
+  }, [videoDuration, totalMs, currentTimeMs, audioRegions, onAudioAdded, timeSelection, onTimeSelectionChange]);
 
   const handleAddAnnotation = useCallback(() => {
     if (!videoDuration || videoDuration === 0 || totalMs === 0 || !onAnnotationAdded) {
@@ -1556,11 +1727,15 @@ export default function TimelineEditor({
     }
 
     // Multiple annotations can exist at the same timestamp
-    const finalStart = Math.max(0, Math.min(currentTimeMs, totalMs));
-    const finalEnd = Math.min(finalStart + defaultDuration, totalMs);
+    const finalStart = timeSelection ? timeSelection.startMs : Math.max(0, Math.min(currentTimeMs, totalMs));
+    const finalEnd = timeSelection ? timeSelection.endMs : Math.min(finalStart + defaultDuration, totalMs);
 
     onAnnotationAdded({ start: finalStart, end: finalEnd });
-  }, [videoDuration, totalMs, currentTimeMs, onAnnotationAdded, defaultRegionDurationMs]);
+
+    if (timeSelection) {
+      onTimeSelectionChange?.(null);
+    }
+  }, [videoDuration, totalMs, currentTimeMs, onAnnotationAdded, defaultRegionDurationMs, timeSelection, onTimeSelectionChange]);
 
 
   useEffect(() => {
@@ -1593,7 +1768,13 @@ export default function TimelineEditor({
         handleAddSpeed();
       }
 
-
+      // Mode switching shortcuts
+      if (e.key.toLowerCase() === 'v' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        onTimelineModeChange?.('move');
+      }
+      if (e.key.toLowerCase() === 'e' && !e.ctrlKey && !e.metaKey && !e.altKey) {
+        onTimelineModeChange?.('select');
+      }
 
 
       // Tab: Cycle through overlapping annotations at current time
@@ -1827,7 +2008,38 @@ export default function TimelineEditor({
   return (
     <div className="flex-1 min-h-0 flex flex-col bg-[#17171a] overflow-auto">
       <div className="flex items-center gap-4 px-4 py-2 border-b border-white/10 bg-[#161619]">
-
+        <div className="flex items-center bg-black/40 rounded-lg p-1 border border-white/5 shadow-inner">
+          <Button
+            onClick={() => onTimelineModeChange?.('move')}
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-7 px-3 text-[11px] transition-all gap-1.5 rounded-md border border-transparent",
+              timelineMode === 'move'
+                ? "bg-[#2563EB] text-white hover:bg-[#3b82f6] shadow-lg shadow-blue-500/20 border-white/10"
+                : "text-white/50 hover:text-white/80 hover:bg-white/5"
+            )}
+            title="Move Tools (V)"
+          >
+            <MousePointer2 className={cn("w-3.5 h-3.5", timelineMode === 'move' ? "text-white" : "text-white/40")} />
+            <span className="font-semibold uppercase tracking-wider">Move</span>
+          </Button>
+          <Button
+            onClick={() => onTimelineModeChange?.('select')}
+            variant="ghost"
+            size="sm"
+            className={cn(
+              "h-7 px-3 text-[11px] transition-all gap-1.5 rounded-md border border-transparent",
+              timelineMode === 'select'
+                ? "bg-[#2563EB] text-white hover:bg-[#3b82f6] shadow-lg shadow-blue-500/20 border-white/10"
+                : "text-white/50 hover:text-white/80 hover:bg-white/5"
+            )}
+            title="Select Tools (E)"
+          >
+            <BoxSelect className={cn("w-3.5 h-3.5", timelineMode === 'select' ? "text-white" : "text-white/40")} />
+            <span className="font-semibold uppercase tracking-wider">Select</span>
+          </Button>
+        </div>
 
 
 
@@ -2041,8 +2253,11 @@ export default function TimelineEditor({
             selectAllBlocksActive={selectAllBlocksActive}
             onClearBlockSelection={clearSelectedBlocks}
             keyframes={keyframes}
+            timeSelection={timeSelection}
+            onTimeSelectionChange={onTimeSelectionChange}
             isMasterSelected={isMasterSelected}
             onSelectMaster={onSelectMaster}
+            timelineMode={timelineMode}
           />
         </TimelineWrapper>
       </div>

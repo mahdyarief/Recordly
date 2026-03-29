@@ -18,17 +18,22 @@ export default function Row({ id, children, label, hint, isEmpty, labelColor = '
       className="border-b border-[#18181b] bg-[#18181b] relative flex-1 min-h-[26px]"
       style={{ ...rowWrapperStyle, marginBottom: 2 }}
     >
-      <div className="absolute left-1.5 top-0 bottom-0 flex items-center gap-1.5 z-20 pointer-events-none select-none">
-        {label && (
-          <div
-            className="text-[9px] font-semibold uppercase tracking-widest"
-            style={{ color: labelColor, writingMode: 'horizontal-tb' }}
-          >
-            {label}
-          </div>
-        )}
-        {controls && <div className="pointer-events-auto">{controls}</div>}
-      </div>
+      {(label || controls) && (
+        <div
+          className="absolute left-1.5 top-0 bottom-0 z-20 flex items-center gap-1.5 pointer-events-none select-none"
+          style={{ writingMode: 'horizontal-tb' }}
+        >
+          {label && (
+            <div
+              className="text-[9px] font-semibold uppercase tracking-widest"
+              style={{ color: labelColor }}
+            >
+              {label}
+            </div>
+          )}
+          {controls && <div className="pointer-events-auto">{controls}</div>}
+        </div>
+      )}
       {isEmpty && hint && (
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none select-none z-10">
           <span className="text-[11px] text-white/15 font-medium">{hint}</span>
