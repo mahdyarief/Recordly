@@ -48,6 +48,8 @@ import {
   DEFAULT_CURSOR_CONFIG,
   PixiCursorOverlay,
   preloadCursorAssets,
+  drawCursorOnCanvas,
+  SmoothedCursorState,
 } from "./videoPlayback/cursorRenderer";
 import {
   buildActiveCaptionLayout,
@@ -291,6 +293,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     const captionBoxRef = useRef<HTMLDivElement | null>(null);
     const currentTimeRef = useRef(0);
     const zoomRegionsRef = useRef<ZoomRegion[]>([]);
+    const annotationRegionsRef = useRef<AnnotationRegion[]>([]);
     const selectedZoomIdRef = useRef<string | null>(null);
     const animationStateRef = useRef<PlaybackAnimationState>(
       createPlaybackAnimationState(),
@@ -299,6 +302,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     const motionBlurFilterRef = useRef<MotionBlurFilter | null>(null);
     const isDraggingFocusRef = useRef(false);
     const stageSizeRef = useRef({ width: 0, height: 0 });
+    const cursorCanvasRef = useRef<HTMLCanvasElement | null>(null);
+    const smoothedCursorStateRef = useRef<SmoothedCursorState | null>(null);
     const videoSizeRef = useRef({ width: 0, height: 0 });
     const baseScaleRef = useRef(1);
     const baseOffsetRef = useRef({ x: 0, y: 0 });
@@ -433,13 +438,13 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
       const margin = webcam.margin ?? 24;
       const scaledSize = getWebcamOverlaySizePx({
-    		containerWidth: overlay.clientWidth,
-    		containerHeight: overlay.clientHeight,
-      		sizePercent: webcam.size ?? DEFAULT_WEBCAM_SIZE,
-    		margin,
-    		zoomScale,
-      		reactToZoom: webcam.reactToZoom ?? DEFAULT_WEBCAM_REACT_TO_ZOOM,
-    	});
+        containerWidth: overlay.clientWidth,
+        containerHeight: overlay.clientHeight,
+        sizePercent: webcam.size ?? DEFAULT_WEBCAM_SIZE,
+        margin,
+        zoomScale,
+        reactToZoom: webcam.reactToZoom ?? DEFAULT_WEBCAM_REACT_TO_ZOOM,
+      });
       const { x, y } = getWebcamOverlayPosition({
         containerWidth: overlay.clientWidth,
         containerHeight: overlay.clientHeight,
@@ -567,8 +572,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         const selectedId = selectedZoomIdRef.current;
         const activeRegion = selectedId
           ? (zoomRegionsRef.current.find(
-              (region) => region.id === selectedId,
-            ) ?? null)
+            (region) => region.id === selectedId,
+          ) ?? null)
           : null;
 
         updateOverlayForRegion(activeRegion);
@@ -635,9 +640,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
           restoreTime > epsilon
             ? restoreTime - epsilon
             : Math.min(
-                duration || restoreTime + epsilon,
-                restoreTime + epsilon,
-              );
+              duration || restoreTime + epsilon,
+              restoreTime + epsilon,
+            );
 
         if (Math.abs(nudgeTarget - restoreTime) < 0.000001) {
           return;
@@ -726,7 +731,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       isDraggingFocusRef.current = false;
       try {
         event.currentTarget.releasePointerCapture(event.pointerId);
-      } catch {}
+      } catch { }
     };
 
     const handleOverlayPointerUp = (
@@ -743,7 +748,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
 
     useEffect(() => {
       zoomRegionsRef.current = zoomRegions;
-    }, [zoomRegions]);
+      annotationRegionsRef.current = annotationRegions;
+    }, [zoomRegions, annotationRegions]);
 
     useEffect(() => {
       selectedZoomIdRef.current = selectedZoomId;
@@ -902,7 +908,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         requestAnimationFrame(() => {
           const finalApp = appRef.current;
           if (wasPlaying && video) {
-            video.play().catch(() => {});
+            video.play().catch(() => { });
           }
           if (tickerWasStarted && finalApp?.ticker) {
             finalApp.ticker.start();
@@ -974,7 +980,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       if (isPlaying) {
         const playPromise = webcamVideo.play();
         if (playPromise) {
-          playPromise.catch(() => {});
+          playPromise.catch(() => { });
         }
       } else {
         webcamVideo.pause();
@@ -1132,8 +1138,9 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       const app = appRef.current;
       const videoContainer = videoContainerRef.current;
       const cursorContainer = cursorContainerRef.current;
+      const cameraContainer = cameraContainerRef.current;
 
-      if (!video || !app || !videoContainer || !cursorContainer) return;
+      if (!video || !app || !videoContainer || !cursorContainer || !cameraContainer) return;
       if (video.videoWidth === 0 || video.videoHeight === 0) return;
 
       const source = VideoSource.from(video);
@@ -1153,9 +1160,8 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       videoContainer.addChild(maskGraphics);
       videoContainer.mask = maskGraphics;
       maskGraphicsRef.current = maskGraphics;
-      if (cursorOverlayRef.current) {
-        cursorContainer.addChild(cursorOverlayRef.current.container);
-      }
+
+      smoothedCursorStateRef.current = new SmoothedCursorState(DEFAULT_CURSOR_CONFIG);
 
       animationStateRef.current = createPlaybackAnimationState();
 
@@ -1317,7 +1323,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
               scale:
                 startTransform.scale +
                 (endTransform.scale - startTransform.scale) *
-                  transition.progress,
+                transition.progress,
               x:
                 startTransform.x +
                 (endTransform.x - startTransform.x) * transition.progress,
@@ -1389,17 +1395,46 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         );
         applyWebcamBubbleLayout(animationStateRef.current.appliedScale || 1);
 
-        // Update cursor overlay
-        const cursorOverlay = cursorOverlayRef.current;
-        if (cursorOverlay) {
+        // Update cursor overlay on separate top-level canvas
+        const cursorCanvas = cursorCanvasRef.current;
+        const smoothedState = smoothedCursorStateRef.current;
+        if (cursorCanvas && smoothedState && cursorTelemetryRef.current && showCursorRef.current) {
           const timeMs = currentTimeRef.current;
-          cursorOverlay.update(
-            cursorTelemetryRef.current,
-            timeMs,
-            baseMaskRef.current,
-            showCursorRef.current,
-            !isPlayingRef.current || isSeekingRef.current,
-          );
+          const ctx = cursorCanvas.getContext('2d');
+          if (ctx) {
+            // Match canvas size to container
+            if (cursorCanvas.width !== cursorCanvas.clientWidth || cursorCanvas.height !== cursorCanvas.clientHeight) {
+              cursorCanvas.width = cursorCanvas.clientWidth;
+              cursorCanvas.height = cursorCanvas.clientHeight;
+            }
+            
+            ctx.clearRect(0, 0, cursorCanvas.width, cursorCanvas.height);
+            
+            // Draw cursor on top using utility
+            drawCursorOnCanvas(
+              ctx,
+              cursorTelemetryRef.current,
+              timeMs,
+              {
+                x: 0,
+                y: 0,
+                width: cursorCanvas.width,
+                height: cursorCanvas.height,
+                sourceCrop: cropRegion,
+              },
+              smoothedState,
+              {
+                ...DEFAULT_CURSOR_CONFIG,
+                style: cursorStyle,
+                dotRadius: 28 * cursorSize, // Matches Pixi scaling approx
+                smoothingFactor: cursorSmoothing,
+                motionBlur: cursorMotionBlur,
+                clickBounce: cursorClickBounce,
+                clickBounceDuration: cursorClickBounceDuration,
+                sway: cursorSway,
+              }
+            );
+          }
         }
       };
 
@@ -1776,6 +1811,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
                 />
               ));
             })()}
+            {/* Top-level Cursor Layer (on top of all annotations) */}
+            {showCursor && (
+              <canvas
+                ref={cursorCanvasRef}
+                className="absolute inset-0 pointer-events-none w-full h-full"
+                style={{ zIndex: 10000 }} // Ensure it's above any annotation zIndex
+              />
+            )}
           </div>
         )}
         <video
