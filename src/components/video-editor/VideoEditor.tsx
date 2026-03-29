@@ -1284,9 +1284,9 @@ export default function VideoEditor() {
 		() =>
 			Boolean(
 				currentProjectPath &&
-					currentProjectSnapshot &&
-					lastSavedSnapshot &&
-					!areDeepEqual(currentProjectSnapshot, lastSavedSnapshot),
+				currentProjectSnapshot &&
+				lastSavedSnapshot &&
+				!areDeepEqual(currentProjectSnapshot, lastSavedSnapshot),
 			),
 		[currentProjectPath, currentProjectSnapshot, lastSavedSnapshot],
 	);
@@ -1967,10 +1967,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-							...region,
-							startMs: Math.round(span.start),
-							endMs: Math.round(span.end),
-						}
+						...region,
+						startMs: Math.round(span.start),
+						endMs: Math.round(span.end),
+					}
 					: region,
 			),
 		);
@@ -1981,10 +1981,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-							...region,
-							startMs: Math.round(span.start),
-							endMs: Math.round(span.end),
-						}
+						...region,
+						startMs: Math.round(span.start),
+						endMs: Math.round(span.end),
+					}
 					: region,
 			),
 		);
@@ -1995,9 +1995,9 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-							...region,
-							focus: clampFocusToDepth(focus, region.depth),
-						}
+						...region,
+						focus: clampFocusToDepth(focus, region.depth),
+					}
 					: region,
 			),
 		);
@@ -2010,10 +2010,10 @@ export default function VideoEditor() {
 				prev.map((region) =>
 					region.id === selectedZoomId
 						? {
-								...region,
-								depth,
-								focus: clampFocusToDepth(region.focus, depth),
-							}
+							...region,
+							depth,
+							focus: clampFocusToDepth(region.focus, depth),
+						}
 						: region,
 				),
 			);
@@ -2071,10 +2071,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-							...region,
-							startMs: Math.round(span.start),
-							endMs: Math.round(span.end),
-						}
+						...region,
+						startMs: Math.round(span.start),
+						endMs: Math.round(span.end),
+					}
 					: region,
 			),
 		);
@@ -2122,10 +2122,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-							...region,
-							startMs: Math.round(span.start),
-							endMs: Math.round(span.end),
-						}
+						...region,
+						startMs: Math.round(span.start),
+						endMs: Math.round(span.end),
+					}
 					: region,
 			),
 		);
@@ -2176,10 +2176,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-							...region,
-							startMs: Math.round(span.start),
-							endMs: Math.round(span.end),
-						}
+						...region,
+						startMs: Math.round(span.start),
+						endMs: Math.round(span.end),
+					}
 					: region,
 			),
 		);
@@ -2230,6 +2230,11 @@ export default function VideoEditor() {
 					if (!region.figureData) {
 						updatedRegion.figureData = { ...DEFAULT_FIGURE_DATA };
 					}
+				} else if (type === "blur") {
+					updatedRegion.content = "Blur Region";
+					if (updatedRegion.blurIntensity === undefined) {
+						updatedRegion.blurIntensity = 12;
+					}
 				}
 
 				return updatedRegion;
@@ -2252,6 +2257,12 @@ export default function VideoEditor() {
 	const handleAnnotationFigureDataChange = useCallback((id: string, figureData: FigureData) => {
 		setAnnotationRegions((prev) =>
 			prev.map((region) => (region.id === id ? { ...region, figureData } : region)),
+		);
+	}, []);
+
+	const handleAnnotationBlurIntensityChange = useCallback((id: string, blurIntensity: number) => {
+		setAnnotationRegions((prev) =>
+			prev.map((region) => (region.id === id ? { ...region, blurIntensity } : region)),
 		);
 	}, []);
 
@@ -2786,12 +2797,12 @@ export default function VideoEditor() {
 			gifConfig:
 				exportFormat === "gif"
 					? {
-							frameRate: gifFrameRate,
-							loop: gifLoop,
-							sizePreset: gifSizePreset,
-							width: gifDimensions.width,
-							height: gifDimensions.height,
-						}
+						frameRate: gifFrameRate,
+						loop: gifLoop,
+						sizePreset: gifSizePreset,
+						width: gifDimensions.width,
+						height: gifDimensions.height,
+					}
 					: undefined,
 		};
 
@@ -2908,11 +2919,11 @@ export default function VideoEditor() {
 			? t("editor.exportStatus.saving", "Opening save dialog...")
 			: isExportFinalizing && typeof exportProgress.renderProgress === "number"
 				? t("editor.exportStatus.finalizingPercent", "Finalizing {{percent}}%", {
-						percent: Math.round(exportProgress.renderProgress),
-					})
+					percent: Math.round(exportProgress.renderProgress),
+				})
 				: t("editor.exportStatus.completePercent", "{{percent}}% complete", {
-						percent: Math.round(exportProgress.percentage),
-					})
+					percent: Math.round(exportProgress.percentage),
+				})
 		: t("editor.exportStatus.preparing", "Preparing export...");
 
 	const projectBrowser = (
@@ -3478,6 +3489,7 @@ export default function VideoEditor() {
 						onAnnotationTypeChange={handleAnnotationTypeChange}
 						onAnnotationStyleChange={handleAnnotationStyleChange}
 						onAnnotationFigureDataChange={handleAnnotationFigureDataChange}
+						onAnnotationBlurIntensityChange={handleAnnotationBlurIntensityChange}
 						onAnnotationDelete={handleAnnotationDelete}
 						selectedSpeedId={selectedSpeedId}
 						selectedSpeedValue={
