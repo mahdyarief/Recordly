@@ -219,6 +219,7 @@ export function AnnotationOverlay({
           annotation.type === 'text' && "bg-transparent",
           annotation.type === 'image' && "bg-transparent",
           annotation.type === 'figure' && "bg-transparent",
+          annotation.type === 'blur' && "bg-transparent",
           isSelected && "shadow-lg"
         )}
       >

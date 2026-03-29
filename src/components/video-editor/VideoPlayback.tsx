@@ -151,7 +151,6 @@ function getEffectiveNativeAspectRatio(
 interface VideoPlaybackProps {
   videoPath: string;
   onDurationChange: (duration: number) => void;
-  onPreviewReadyChange?: (ready: boolean) => void;
   onTimeUpdate: (time: number) => void;
   currentTime: number;
   onPlayStateChange: (playing: boolean) => void;
@@ -209,6 +208,7 @@ interface VideoPlaybackProps {
   volume?: number;
 }
 
+
 export interface VideoPlaybackRef {
   video: HTMLVideoElement | null;
   app: Application | null;
@@ -218,6 +218,7 @@ export interface VideoPlaybackRef {
   play: () => Promise<void>;
   pause: () => void;
   refreshFrame: () => Promise<void>;
+  seek: (time: number) => void;
 }
 
 const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
@@ -225,7 +226,6 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     {
       videoPath,
       onDurationChange,
-      onPreviewReadyChange,
       onTimeUpdate,
       currentTime,
       onPlayStateChange,
@@ -276,6 +276,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
       timeSelection = null,
       volume = 1,
     },
+
     ref,
   ) => {
     const videoRef = useRef<HTMLVideoElement | null>(null);
@@ -673,6 +674,11 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
           video.currentTime = nudgeTarget;
         });
       },
+      seek: (time: number) => {
+        const video = videoRef.current;
+        if (!video) return;
+        video.currentTime = time;
+      },
     }));
 
     const updateFocusFromClientPoint = (clientX: number, clientY: number) => {
@@ -852,6 +858,10 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     useEffect(() => {
       cropRegionRef.current = cropRegion;
     }, [cropRegion]);
+
+    useEffect(() => {
+      timeSelectionRef.current = timeSelection;
+    }, [timeSelection]);
 
     useEffect(() => {
       currentTimeRef.current = currentTime * 1000;
@@ -1138,10 +1148,6 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
     }, [videoPath]);
 
     useEffect(() => {
-      onPreviewReadyChange?.(videoReady);
-    }, [onPreviewReadyChange, videoReady]);
-
-    useEffect(() => {
       if (!pixiReady || !videoReady) return;
 
       const video = videoRef.current;
@@ -1201,6 +1207,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
           speedRegionsRef,
           timeSelectionRef,
         });
+
 
       video.addEventListener("play", handlePlay);
       video.addEventListener("pause", handlePause);

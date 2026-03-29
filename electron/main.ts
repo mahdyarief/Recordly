@@ -9,6 +9,7 @@ import {
 	ipcMain,
 	Menu,
 	nativeImage,
+	Notification,
 	session,
 	systemPreferences,
 	Tray,
@@ -26,11 +27,14 @@ import {
 	downloadAvailableUpdate,
 	deferUpdateReminder,
 	getCurrentUpdateToastPayload,
+	getUpdaterLogPath,
+	getUpdateStatusSummary,
 	installDownloadedUpdateNow,
 	previewUpdateToast,
 	skipAvailableUpdateVersion,
 	setupAutoUpdates,
 } from "./updater";
+import type { UpdateToastPayload } from "./updater";
 import {
 	createEditorWindow,
 	createHudOverlayWindow,
@@ -84,6 +88,8 @@ let tray: Tray | null = null;
 let selectedSourceName = "";
 let editorHasUnsavedChanges = false;
 let isForceClosing = false;
+let activeUpdateNotification: Notification | null = null;
+let activeUpdateNotificationKey: string | null = null;
 const hasSingleInstanceLock = app.requestSingleInstanceLock();
 
 if (!hasSingleInstanceLock) {
@@ -100,9 +106,23 @@ function closeEditorWindowBypassingUnsavedPrompt(window: BrowserWindow | null) {
 	window.close();
 }
 
-// Tray Icons
-const defaultTrayIcon = getTrayIcon("app-icons/recordly-32.png");
-const recordingTrayIcon = getTrayIcon("rec-button.png");
+// Tray Icons (lazily created after app is ready to avoid accessing Electron APIs too early)
+let defaultTrayIcon: ReturnType<typeof getTrayIcon> | null = null;
+let recordingTrayIcon: ReturnType<typeof getTrayIcon> | null = null;
+
+function getDefaultTrayIcon() {
+	if (!defaultTrayIcon) {
+		defaultTrayIcon = getTrayIcon("app-icons/recordly-32.png");
+	}
+	return defaultTrayIcon;
+}
+
+function getRecordingTrayIcon() {
+	if (!recordingTrayIcon) {
+		recordingTrayIcon = getTrayIcon("rec-button.png");
+	}
+	return recordingTrayIcon;
+}
 
 ipcMain.on("set-has-unsaved-changes", (_event, hasChanges: boolean) => {
 	editorHasUnsavedChanges = hasChanges;
@@ -272,7 +292,7 @@ function setupApplicationMenu() {
 }
 
 function createTray() {
-	tray = new Tray(defaultTrayIcon);
+	tray = new Tray(getDefaultTrayIcon());
 	tray.on("click", () => focusOrCreateMainWindow());
 }
 
@@ -303,7 +323,99 @@ function syncDockIcon() {
 	}
 }
 
+function getUpdateNotificationTitle(payload: UpdateToastPayload) {
+	switch (payload.phase) {
+		case "available":
+			return `Recordly ${payload.version} is available`;
+		case "downloading":
+			return `Downloading Recordly ${payload.version}`;
+		case "ready":
+			return `Recordly ${payload.version} is ready`;
+		case "error":
+			return `Recordly ${payload.version} needs attention`;
+	}
+}
+
+function getUpdateNotificationBody(payload: UpdateToastPayload) {
+	switch (payload.phase) {
+		case "available":
+			return "Click to download the update.";
+		case "downloading":
+			return "Recordly is downloading the update in the foreground.";
+		case "ready":
+			return "Click to install the downloaded update.";
+		case "error":
+			return "Click to retry checking for updates.";
+	}
+}
+
+function clearActiveUpdateNotification() {
+	if (activeUpdateNotification) {
+		activeUpdateNotification.close();
+		activeUpdateNotification = null;
+	}
+	activeUpdateNotificationKey = null;
+}
+
 function sendUpdateToastToWindows(channel: "update-toast-state", payload: unknown) {
+	if (process.platform !== "darwin") {
+		if (!payload) {
+			clearActiveUpdateNotification();
+			return true;
+		}
+
+		const updatePayload = payload as UpdateToastPayload;
+		if (updatePayload.phase === "downloading") {
+			return true;
+		}
+
+		if (!Notification.isSupported()) {
+			return false;
+		}
+
+		const notificationKey = [updatePayload.phase, updatePayload.version, updatePayload.detail].join(":");
+		if (activeUpdateNotificationKey === notificationKey) {
+			return true;
+		}
+
+		clearActiveUpdateNotification();
+		const notification = new Notification({
+			title: getUpdateNotificationTitle(updatePayload),
+			body: getUpdateNotificationBody(updatePayload),
+			icon: getAppImage("app-icons/recordly-128.png"),
+			silent: false,
+		});
+
+		notification.on("click", () => {
+			focusOrCreateMainWindow();
+			switch (updatePayload.phase) {
+				case "available":
+					void downloadAvailableUpdate(sendUpdateToastToWindows);
+					break;
+				case "ready":
+					installDownloadedUpdateNow(sendUpdateToastToWindows);
+					break;
+				case "error":
+					void checkForAppUpdates(getUpdateDialogWindow, { manual: true });
+					break;
+				default:
+					break;
+			}
+		});
+
+		notification.on("close", () => {
+			if (activeUpdateNotification === notification) {
+				activeUpdateNotification = null;
+				activeUpdateNotificationKey = null;
+			}
+		});
+
+		notification.show();
+		activeUpdateNotification = notification;
+		activeUpdateNotificationKey = notificationKey;
+		return true;
+	}
+
 	if (!payload) {
 		const existingWindow = getUpdateToastWindow();
 		if (!existingWindow) {
@@ -368,13 +480,22 @@ ipcMain.handle("get-current-update-toast-payload", () => {
 	return getCurrentUpdateToastPayload();
 });
 
+ipcMain.handle("get-update-status-summary", () => {
+	return getUpdateStatusSummary();
+});
+
 ipcMain.handle("preview-update-toast", () => {
 	return { success: previewUpdateToast(sendUpdateToastToWindows) };
 });
 
+ipcMain.handle("check-for-app-updates", async () => {
+	await checkForAppUpdates(getUpdateDialogWindow, { manual: true });
+	return { success: true, logPath: getUpdaterLogPath() };
+});
+
 function updateTrayMenu(recording: boolean = false) {
 	if (!tray) return;
-	const trayIcon = recording ? recordingTrayIcon : defaultTrayIcon;
+	const trayIcon = recording ? getRecordingTrayIcon() : getDefaultTrayIcon();
 	const trayToolTip = recording ? `Recording: ${selectedSourceName}` : "Recordly";
 	const menuTemplate = recording
 		? [
@@ -492,17 +613,26 @@ app.on("second-instance", () => {
 
 // Register all IPC handlers when app is ready
 app.whenReady().then(async () => {
+	if (process.platform === "win32") {
+		app.setAppUserModelId("dev.recordly.app");
+	}
+
 	session.defaultSession.setPermissionCheckHandler((_webContents, permission) => {
-		const allowed = ["media", "audioCapture", "microphone"];
+		const allowed = ["media", "audioCapture", "microphone", "camera", "videoCapture"];
 		return allowed.includes(permission);
 	});
 
 	session.defaultSession.setPermissionRequestHandler((_webContents, permission, callback) => {
-		const allowed = ["media", "audioCapture", "microphone"];
+		const allowed = ["media", "audioCapture", "microphone", "camera", "videoCapture"];
 		callback(allowed.includes(permission));
 	});
 
 	if (process.platform === "darwin") {
+		const cameraStatus = systemPreferences.getMediaAccessStatus("camera");
+		if (cameraStatus !== "granted") {
+			await systemPreferences.askForMediaAccess("camera");
+		}
+
 		const micStatus = systemPreferences.getMediaAccessStatus("microphone");
 		if (micStatus !== "granted") {
 			await systemPreferences.askForMediaAccess("microphone");

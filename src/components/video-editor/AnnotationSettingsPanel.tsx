@@ -1,10 +1,10 @@
 import { useRef, useState, useEffect, useMemo } from "react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
-import { Trash2, Type, Image as ImageIcon, Upload, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, ChevronDown, Info } from "lucide-react";
+import { Trash2, Type, Image as ImageIcon, Upload, Bold, Italic, Underline, AlignLeft, AlignCenter, AlignRight, ChevronDown, Info, Droplets } from "lucide-react";
 import { toast } from "sonner";
 import Block from '@uiw/react-color-block';
-import type { AnnotationRegion, AnnotationType, ArrowDirection, FigureData } from "./types";
+import { type AnnotationRegion, type AnnotationType, type ArrowDirection, type FigureData } from "./types";
 import { Popover, PopoverContent, PopoverTrigger } from "@/components/ui/popover";
 import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
@@ -146,14 +146,11 @@ export function AnnotationSettingsPanel({
               {t('annotations.arrow')}
             </TabsTrigger>
             <TabsTrigger value="blur" className="data-[state=active]:bg-white/[0.08] data-[state=active]:text-[#3B82F6] data-[state=active]:shadow-none text-slate-400 py-1.5 rounded-lg transition-all gap-1.5 text-[11px] font-medium border border-transparent data-[state=active]:border-white/[0.05]">
-              <svg className="w-3.5 h-3.5" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" strokeLinecap="round" strokeLinejoin="round">
-                <circle cx="12" cy="12" r="9" className="opacity-30" />
-                <circle cx="12" cy="12" r="5" className="opacity-60" />
-                <circle cx="12" cy="12" r="1.5" fill="currentColor" />
-              </svg>
+              <Droplets className="w-3.5 h-3.5" />
               {t('annotations.blur', 'Blur')}
             </TabsTrigger>
           </TabsList>
+
 
           {/* Text Content */}
           <TabsContent value="text" className="mt-0 space-y-4">

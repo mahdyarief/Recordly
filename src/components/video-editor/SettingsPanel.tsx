@@ -1,4 +1,4 @@
-import { Palette, Trash2, Upload, X } from "lucide-react";
+import { MessageSquare, Music, Palette, Trash2, Upload, X } from "lucide-react";
 import { AnimatePresence, LayoutGroup, motion } from "motion/react";
 import { useEffect, useMemo, useRef, useState } from "react";
 import { toast } from "sonner";
@@ -26,11 +26,13 @@ import parchedCursorUrl from "../../assets/cursors/parched/default.png";
 import turtleCursorUrl from "../../assets/cursors/turtle/default.png";
 import { useI18n, useScopedT } from "../../contexts/I18nContext";
 import { AnnotationSettingsPanel } from "./AnnotationSettingsPanel";
+import { AudioSettingsPanel } from "./AudioSettingsPanel";
 import { loadEditorPreferences, saveEditorPreferences } from "./editorPreferences";
 import { SliderControl } from "./SliderControl";
 import type {
 	AnnotationRegion,
 	AnnotationType,
+	AudioRegion,
 	AutoCaptionAnimation,
 	AutoCaptionSettings,
 	CaptionCue,
@@ -111,6 +113,7 @@ export type EditorEffectSection =
 	| "cursor"
 	| "captions"
 	| "webcam"
+	| "audio"
 	| "zoom"
 	| "frame"
 	| "crop";
@@ -140,8 +143,10 @@ function SectionLabel({ children }: { children: React.ReactNode }) {
 interface SettingsPanelProps {
 	panelMode?: "editor" | "background";
 	activeEffectSection?: EditorEffectSection;
-	selected: string;
+	wallpaper: string;
 	onWallpaperChange: (path: string) => void;
+	autoSuggestZoomsTrigger?: number;
+	onAutoSuggestZoomsConsumed?: () => void;
 	selectedZoomDepth?: ZoomDepth | null;
 	onZoomDepthChange?: (depth: ZoomDepth) => void;
 	selectedZoomId?: string | null;
@@ -210,7 +215,11 @@ interface SettingsPanelProps {
 	onAnnotationFigureDataChange?: (id: string, figureData: FigureData) => void;
 	onAnnotationBlurIntensityChange?: (id: string, intensity: number) => void;
 	onAnnotationDelete?: (id: string) => void;
+	onSeek?: (time: number) => void;
 	autoCaptions?: CaptionCue[];
+	onAutoCaptionsChange?: (captions: CaptionCue[]) => void;
+	selectedCaptionId?: string | null;
+	onSelectCaption?: (id: string | null) => void;
 	autoCaptionSettings?: AutoCaptionSettings;
 	whisperExecutablePath?: string | null;
 	whisperModelPath?: string | null;
@@ -222,12 +231,32 @@ interface SettingsPanelProps {
 	onPickWhisperModel?: () => void;
 	onGenerateAutoCaptions?: () => void;
 	onClearAutoCaptions?: () => void;
-	onDownloadWhisperSmallModel?: () => void;
-	onDeleteWhisperSmallModel?: () => void;
+	autoCaptionProgress?: number;
+	onDownloadWhisperModel?: () => void;
+	onDeleteWhisperModel?: () => void;
 	selectedSpeedId?: string | null;
 	selectedSpeedValue?: PlaybackSpeed | null;
 	onSpeedChange?: (speed: PlaybackSpeed) => void;
 	onSpeedDelete?: (id: string) => void;
+	audioRegions?: AudioRegion[];
+	selectedAudioId?: string | null;
+	onAudioVolumeChange?: (id: string, volume: number) => void;
+	onAudioMutedChange?: (id: string, muted: boolean) => void;
+	onAudioSoloedChange?: (id: string, soloed: boolean) => void;
+	onAudioFadeInMsChange?: (id: string, ms: number) => void;
+	onAudioFadeOutMsChange?: (id: string, ms: number) => void;
+	onAudioDelete?: (id: string) => void;
+	timeSelection?: { startMs: number; endMs: number } | null;
+	isMasterSelected?: boolean;
+	masterAudioVolume?: number;
+	masterAudioMuted?: boolean;
+	masterAudioSoloed?: boolean;
+	videoDuration?: number;
+	videoPath?: string;
+	onMasterAudioVolumeChange?: (volume: number) => void;
+	onMasterAudioMutedChange?: (muted: boolean) => void;
+	onMasterAudioSoloedChange?: (soloed: boolean) => void;
+	onAutoSuggestZooms?: () => void;
 }
 
 export default SettingsPanel;
@@ -245,16 +274,16 @@ const WEBCAM_POSITION_PRESETS: Array<{
 	preset: Exclude<WebcamPositionPreset, "custom">;
 	label: string;
 }> = [
-	{ preset: "top-left", label: "↖" },
-	{ preset: "top-center", label: "↑" },
-	{ preset: "top-right", label: "↗" },
-	{ preset: "center-left", label: "←" },
-	{ preset: "center", label: "•" },
-	{ preset: "center-right", label: "→" },
-	{ preset: "bottom-left", label: "↙" },
-	{ preset: "bottom-center", label: "↓" },
-	{ preset: "bottom-right", label: "↘" },
-];
+		{ preset: "top-left", label: "↖" },
+		{ preset: "top-center", label: "↑" },
+		{ preset: "top-right", label: "↗" },
+		{ preset: "center-left", label: "←" },
+		{ preset: "center", label: "•" },
+		{ preset: "center-right", label: "→" },
+		{ preset: "bottom-left", label: "↙" },
+		{ preset: "bottom-center", label: "↓" },
+		{ preset: "bottom-right", label: "↘" },
+	];
 
 const CURSOR_STYLE_OPTIONS: Array<{ value: CursorStyle; label: string }> = [
 	{ value: "tahoe", label: "Tahoe" },
@@ -279,7 +308,23 @@ const CAPTION_LANGUAGE_OPTIONS = [
 	{ value: "zh", label: "Chinese" },
 	{ value: "ja", label: "Japanese" },
 	{ value: "ko", label: "Korean" },
+	{ value: "id", label: "Indonesian" },
 ] as const;
+
+export type WhisperModelInfo = {
+	value: "tiny" | "base" | "small" | "medium" | "large" | "custom";
+	label: string;
+	size: string;
+};
+
+const WHISPER_MODEL_OPTIONS: WhisperModelInfo[] = [
+	{ value: "tiny", label: "Tiny", size: "75 MB" },
+	{ value: "base", label: "Base", size: "142 MB" },
+	{ value: "small", label: "Small", size: "466 MB" },
+	{ value: "medium", label: "Medium", size: "1.5 GB" },
+	{ value: "large", label: "Large (v3)", size: "2.9 GB" },
+	{ value: "custom", label: "Custom", size: "Local File" },
+];
 
 function loadPreviewImage(url: string) {
 	return new Promise<HTMLImageElement>((resolve, reject) => {
@@ -356,9 +401,9 @@ function trimCanvasToAlpha(canvas: HTMLCanvasElement, hotspot?: { x: number; y: 
 		height: croppedHeight,
 		hotspot: hotspot
 			? {
-					x: hotspot.x - minX,
-					y: hotspot.y - minY,
-				}
+				x: hotspot.x - minX,
+				y: hotspot.y - minY,
+			}
 			: undefined,
 	};
 }
@@ -496,7 +541,7 @@ function CursorStylePreview({
 export function SettingsPanel({
 	panelMode = "editor",
 	activeEffectSection: activeEffectSectionProp,
-	selected,
+	wallpaper,
 	onWallpaperChange,
 	selectedZoomDepth,
 	onZoomDepthChange,
@@ -548,7 +593,10 @@ export function SettingsPanel({
 	onAnnotationFigureDataChange,
 	onAnnotationBlurIntensityChange,
 	onAnnotationDelete,
+	onSeek,
 	autoCaptions = [],
+	onAutoCaptionsChange,
+	autoCaptionProgress = 0,
 	autoCaptionSettings = DEFAULT_AUTO_CAPTION_SETTINGS,
 	whisperModelPath,
 	whisperModelDownloadStatus = "idle",
@@ -558,15 +606,36 @@ export function SettingsPanel({
 	onPickWhisperModel,
 	onGenerateAutoCaptions,
 	onClearAutoCaptions,
-	onDownloadWhisperSmallModel,
-	onDeleteWhisperSmallModel,
+	onDownloadWhisperModel,
+	onDeleteWhisperModel,
+	selectedCaptionId,
+	onSelectCaption,
 	selectedSpeedId,
 	selectedSpeedValue,
 	onSpeedChange,
 	onSpeedDelete,
+	audioRegions = [],
+	selectedAudioId,
+	onAudioVolumeChange,
+	onAudioMutedChange,
+	onAudioSoloedChange,
+	onAudioFadeInMsChange,
+	onAudioFadeOutMsChange,
+	onAudioDelete,
+	timeSelection,
+	isMasterSelected,
+	masterAudioVolume = 1,
+	masterAudioMuted = false,
+	masterAudioSoloed = false,
+	videoDuration,
+	videoPath,
+	onMasterAudioVolumeChange,
+	onMasterAudioMutedChange,
+	onMasterAudioSoloedChange,
 }: SettingsPanelProps) {
 	const tSettings = useScopedT("settings");
 	const { t } = useI18n();
+
 	const isBackgroundPanel = panelMode === "background";
 	const initialEditorPreferences = useMemo(() => loadEditorPreferences(), []);
 	const [builtInWallpapers, setBuiltInWallpapers] =
@@ -637,14 +706,14 @@ export function SettingsPanel({
 	];
 
 	const [selectedColor, setSelectedColor] = useState(
-		isHexWallpaper(selected) ? selected : "#ADADAD",
+		isHexWallpaper(wallpaper) ? wallpaper : "#ADADAD",
 	);
 	const [gradient, setGradient] = useState<string>(
-		GRADIENTS.includes(selected) ? selected : GRADIENTS[0],
+		GRADIENTS.includes(wallpaper) ? wallpaper : GRADIENTS[0],
 	);
 	const removeBackgroundEnabled = aspectRatio === "native" && padding === 0;
 	const [backgroundTab, setBackgroundTab] = useState<BackgroundTab>(() =>
-		getBackgroundTabForWallpaper(selected),
+		getBackgroundTabForWallpaper(wallpaper),
 	);
 	const customColorInputRef = useRef<HTMLInputElement | null>(null);
 	const defaultWebcam = initialEditorPreferences.webcam;
@@ -662,10 +731,10 @@ export function SettingsPanel({
 				const tahoeAsset = uploadedCursorAssets.arrow;
 				const tahoePreview = tahoeAsset
 					? await createTrimmedSvgPreview(
-							tahoeAsset.url,
-							UPLOADED_CURSOR_SAMPLE_SIZE,
-							tahoeAsset.trim,
-						)
+						tahoeAsset.url,
+						UPLOADED_CURSOR_SAMPLE_SIZE,
+						tahoeAsset.trim,
+					)
 					: tahoeCursorUrl;
 				const minimalPreview = await createTrimmedSvgPreview(minimalCursorUrl, 512);
 				const invertedPreview = await createInvertedPreview(tahoePreview);
@@ -694,20 +763,20 @@ export function SettingsPanel({
 	}, []);
 
 	useEffect(() => {
-		setBackgroundTab(getBackgroundTabForWallpaper(selected));
+		setBackgroundTab(getBackgroundTabForWallpaper(wallpaper));
 
-		if (isHexWallpaper(selected)) {
-			setSelectedColor(selected);
+		if (isHexWallpaper(wallpaper)) {
+			setSelectedColor(wallpaper);
 		}
 
-		if (GRADIENTS.includes(selected)) {
-			setGradient(selected);
+		if (GRADIENTS.includes(wallpaper)) {
+			setGradient(wallpaper);
 		}
 
-		if (selected.startsWith("data:image") && !customImages.includes(selected)) {
-			setCustomImages((prev) => [selected, ...prev]);
+		if (wallpaper.startsWith("data:image") && !customImages.includes(wallpaper)) {
+			setCustomImages((prev) => [wallpaper, ...prev]);
 		}
-	}, [customImages, selected]);
+	}, [customImages, wallpaper]);
 
 	useEffect(() => {
 		saveEditorPreferences({ customWallpapers: customImages });
@@ -738,14 +807,14 @@ export function SettingsPanel({
 	const webcamPositionY = webcam?.positionY ?? DEFAULT_WEBCAM_POSITION_Y;
 
 	const getWallpaperTileState = (candidateValue: string, previewPath?: string) => {
-		if (!selected) return false;
-		if (selected === candidateValue || (previewPath && selected === previewPath)) return true;
+		if (!wallpaper) return false;
+		if (wallpaper === candidateValue || (previewPath && wallpaper === previewPath)) return true;
 		try {
 			const clean = (s: string) => s.replace(/^file:\/\//, "").replace(/^\//, "");
-			if (clean(selected).endsWith(clean(candidateValue))) return true;
-			if (clean(candidateValue).endsWith(clean(selected))) return true;
-			if (previewPath && clean(selected).endsWith(clean(previewPath))) return true;
-			if (previewPath && clean(previewPath).endsWith(clean(selected))) return true;
+			if (clean(wallpaper).endsWith(clean(candidateValue))) return true;
+			if (clean(candidateValue).endsWith(clean(wallpaper))) return true;
+			if (previewPath && clean(wallpaper).endsWith(clean(previewPath))) return true;
+			if (previewPath && clean(previewPath).endsWith(clean(wallpaper))) return true;
 		} catch {
 			return false;
 		}
@@ -952,7 +1021,7 @@ export function SettingsPanel({
 		event.stopPropagation();
 		setCustomImages((prev) => prev.filter((img) => img !== imageUrl));
 		// If the removed image was selected, clear selection
-		if (selected === imageUrl) {
+		if (wallpaper === imageUrl) {
 			onWallpaperChange(builtInWallpaperPaths[0] ?? BUILT_IN_WALLPAPERS[0]?.publicPath ?? "");
 		}
 	};
@@ -1102,7 +1171,7 @@ export function SettingsPanel({
 									/>
 									<div className="grid grid-cols-8 gap-1.5">
 										{visibleColorPalette.map((color) => {
-											const isSelected = selected.toLowerCase() === color.toLowerCase();
+											const isSelected = wallpaper.toLowerCase() === color.toLowerCase();
 											return (
 												<button
 													key={color}
@@ -1121,10 +1190,10 @@ export function SettingsPanel({
 											type="button"
 											onClick={() => customColorInputRef.current?.click()}
 											className={wallpaperTileClass(
-												isHexWallpaper(selected) &&
-													!visibleColorPalette.some(
-														(color) => color.toLowerCase() === selected.toLowerCase(),
-													),
+												isHexWallpaper(wallpaper) &&
+												!visibleColorPalette.some(
+													(color) => color.toLowerCase() === wallpaper.toLowerCase(),
+												),
 											)}
 											style={{
 												background: `linear-gradient(135deg, ${selectedColor} 0%, ${selectedColor} 58%, rgba(255,255,255,0.92) 58%, rgba(255,255,255,0.92) 100%)`,
@@ -1382,16 +1451,6 @@ export function SettingsPanel({
 			</div>
 
 			<div className="rounded-lg bg-white/[0.03] px-2.5 py-2 space-y-3">
-				<div>
-					<Button
-						type="button"
-						variant="outline"
-						onClick={onPickWhisperModel}
-						className="h-10 w-full rounded-xl border-white/10 bg-white/5 px-4 text-sm text-slate-200 hover:bg-white/10 hover:text-white"
-					>
-						{tSettings("captions.selectModel", "Select Model")}
-					</Button>
-				</div>
 				<div className="flex items-center justify-between gap-3">
 					<div className="text-sm font-medium text-slate-200">
 						{tSettings("captions.language", "Language")}
@@ -1412,6 +1471,44 @@ export function SettingsPanel({
 						</SelectContent>
 					</Select>
 				</div>
+				<div className="flex items-center justify-between gap-3">
+					<div className="text-sm font-medium text-slate-200">Model</div>
+					<Select
+						value={autoCaptionSettings.selectedModel || "small"}
+						onValueChange={(value) => updateAutoCaptionSettings({ selectedModel: value as any })}
+					>
+						<SelectTrigger className="h-10 w-[180px] rounded-xl border-white/10 bg-white/5 text-sm text-slate-200 hover:bg-white/10">
+							<SelectValue />
+						</SelectTrigger>
+						<SelectContent className="border-white/10 bg-[#1a1a1f] text-slate-200">
+							{WHISPER_MODEL_OPTIONS.map((option) => (
+								<SelectItem key={option.value} value={option.value}>
+									<div className="flex items-center justify-between w-full gap-4">
+										<span>{option.label}</span>
+										<span className="text-[10px] text-slate-500">{option.size}</span>
+									</div>
+								</SelectItem>
+							))}
+						</SelectContent>
+					</Select>
+				</div>
+				{autoCaptionSettings.selectedModel === "custom" && (
+					<div>
+						<Button
+							type="button"
+							variant="outline"
+							onClick={onPickWhisperModel}
+							className="h-10 w-full rounded-xl border-white/10 bg-white/5 px-4 text-sm text-slate-200 hover:bg-white/10 hover:text-white"
+						>
+							{tSettings("captions.selectModel", "Select Model")}
+						</Button>
+						{whisperModelPath && (
+							<p className="mt-1 truncate px-1 text-[10px] text-slate-500">
+								{whisperModelPath.split(/[\\/]/).pop()}
+							</p>
+						)}
+					</div>
+				)}
 				<div className="flex flex-wrap items-center gap-2">
 					<div className="grid w-full grid-cols-2 gap-2">
 						{whisperModelDownloadStatus === "downloading" ? (
@@ -1427,23 +1524,26 @@ export function SettingsPanel({
 							<Button
 								type="button"
 								variant="outline"
-								onClick={onDeleteWhisperSmallModel}
+								onClick={onDeleteWhisperModel}
 								className="h-10 w-full rounded-xl border-white/10 bg-white/5 px-4 text-sm text-slate-200 hover:bg-white/10 hover:text-white"
 							>
 								{tSettings("captions.deleteModel", "Delete Model")}
 							</Button>
-						) : (
+						) : autoCaptionSettings.selectedModel !== "custom" ? (
 							<Button
 								type="button"
-								onClick={onDownloadWhisperSmallModel}
+								onClick={onDownloadWhisperModel}
 								className="h-10 w-full rounded-xl bg-[#2563EB] px-4 text-sm font-medium text-white hover:bg-[#2563EB]/90"
 							>
 								{tSettings("captions.downloadModel", "Download Model")}
 							</Button>
+						) : (
+							<div className="flex h-10 w-full items-center justify-center rounded-xl bg-white/5 px-4 text-[10px] text-slate-500 italic">
+								No local model selected
+							</div>
 						)}
 						<Button
 							type="button"
-							variant="outline"
 							onClick={onClearAutoCaptions}
 							disabled={captionCueCount === 0}
 							className="h-10 w-full rounded-xl border-white/10 bg-white/5 px-4 text-sm text-slate-200 hover:bg-white/10 hover:text-white disabled:opacity-50"
@@ -1452,19 +1552,124 @@ export function SettingsPanel({
 						</Button>
 					</div>
 				</div>
+				<div className="flex flex-col gap-3 pt-1">
+					<div className="flex flex-col gap-1.5 px-1">
+						<SectionLabel>Generation Range</SectionLabel>
+						<ToggleGroup
+							type="single"
+							value={autoCaptionSettings?.generationRange || "full"}
+							onValueChange={(val) =>
+								val &&
+								onAutoCaptionSettingsChange?.({
+									...autoCaptionSettings!,
+									generationRange: val as any,
+								})
+							}
+							className="justify-start gap-1"
+						>
+							<ToggleGroupItem
+								value="full"
+								className="h-7 cursor-pointer rounded-lg border border-white/5 bg-white/5 px-2.5 text-[10px] data-[state=on]:border-blue-500/50 data-[state=on]:bg-blue-500/20 data-[state=on]:text-blue-400"
+							>
+								Full Video
+							</ToggleGroupItem>
+							<ToggleGroupItem
+								value="selected"
+								className="h-7 cursor-pointer rounded-lg border border-white/5 bg-white/5 px-2.5 text-[10px] data-[state=on]:border-blue-500/50 data-[state=on]:bg-blue-500/20 data-[state=on]:text-blue-400"
+							>
+								Selected Timeline {timeSelection ? `(${(timeSelection.startMs / 1000).toFixed(1)}s - ${(timeSelection.endMs / 1000).toFixed(1)}s)` : ""}
+							</ToggleGroupItem>
+						</ToggleGroup>
+					</div>
+				</div>
 				<div className="flex flex-col gap-2">
 					<Button
 						type="button"
 						onClick={onGenerateAutoCaptions}
-						disabled={isGeneratingCaptions || !whisperModelPath}
-						className="h-10 w-full rounded-xl bg-[#2563EB] px-4 text-sm font-medium text-white hover:bg-[#2563EB]/90 disabled:opacity-60"
+						disabled={isGeneratingCaptions}
+						className="relative h-10 w-full overflow-hidden rounded-xl bg-[#2563EB] px-4 text-sm font-medium text-white hover:bg-[#2563EB]/90 disabled:bg-[#2563EB]/50"
 					>
-						{isGeneratingCaptions
-							? tSettings("captions.generating", "Generating...")
-							: captionCueCount > 0
-								? tSettings("captions.regenerateFull", "Regenerate Captions")
-								: tSettings("captions.generateFull", "Generate Captions")}
+						{isGeneratingCaptions && (
+							<motion.div
+								className="absolute inset-y-0 left-0 bg-white/20"
+								initial={{ width: 0 }}
+								animate={{ width: `${autoCaptionProgress}%` }}
+								transition={{ duration: 0.3 }}
+							/>
+						)}
+						<span className="relative z-10">
+							{isGeneratingCaptions
+								? `${tSettings("captions.generating", "Generating...")} (${autoCaptionProgress}%)`
+								: tSettings("captions.generateAutoCaptions", "Generate Captions")}
+						</span>
 					</Button>
+
+					{autoCaptions.length > 0 && (
+						<div className="mt-4 flex flex-col gap-2">
+							<div className="flex items-center justify-between px-1">
+								<span className="text-[10px] font-semibold uppercase tracking-wider text-slate-500">
+									{selectedCaptionId ? "Edit Selected Cue" : "Select Cue on Timeline"}
+								</span>
+							</div>
+
+							<div className="rounded-xl border border-white/5 bg-black/20 p-2">
+								{selectedCaptionId ? (
+									(() => {
+										const index = autoCaptions.findIndex((c) => c.id === selectedCaptionId);
+										const cue = autoCaptions[index];
+										if (!cue) return null;
+
+										return (
+											<div className="flex flex-col gap-2">
+												<div className="flex items-center justify-between">
+													<button
+														type="button"
+														onClick={() => onSeek?.(cue.startMs / 1000)}
+														className="text-[10px] font-medium text-slate-500 hover:text-[#2563EB]"
+													>
+														{(cue.startMs / 1000).toFixed(2)}s – {(cue.endMs / 1000).toFixed(2)}s
+													</button>
+													<button
+														type="button"
+														onClick={() => {
+															const newCaptions = [...autoCaptions];
+															newCaptions.splice(index, 1);
+															onAutoCaptionsChange?.(newCaptions);
+															onSelectCaption?.(null);
+														}}
+														className="text-slate-500 hover:text-red-400 p-1"
+													>
+														<Trash2 className="h-4 w-4" />
+													</button>
+												</div>
+												<textarea
+													value={cue.text}
+													onChange={(e) => {
+														const newCaptions = [...autoCaptions];
+														newCaptions[index] = { ...cue, text: e.target.value };
+														onAutoCaptionsChange?.(newCaptions);
+													}}
+													rows={2}
+													autoFocus
+													className="w-full resize-none rounded-lg border-none bg-white/5 p-2 text-sm text-slate-300 placeholder:text-slate-600 focus:outline-none focus:ring-1 focus:ring-[#2563EB]"
+												/>
+											</div>
+										);
+									})()
+								) : (
+									<div className="flex flex-col items-center justify-center py-6 px-4 text-center">
+										<div className="mb-2 rounded-full bg-white/5 p-2.5">
+											<MessageSquare className="h-4 w-4 text-slate-600" />
+										</div>
+										<p className="text-[11px] text-slate-500 leading-relaxed max-w-[160px]">
+											Select a caption block on the timeline to edit its text and timing
+										</p>
+									</div>
+								)}
+							</div>
+						</div>
+					)}
+
 					{isGeneratingCaptions ? (
 						<div className="space-y-1">
 							<div className="text-xs text-slate-400">
@@ -1617,6 +1822,54 @@ export function SettingsPanel({
 				return sceneSectionContent;
 			case "captions":
 				return captionsSectionContent;
+			case "audio": {
+				const selectedAudio = audioRegions?.find((a) => a.id === selectedAudioId);
+				if (selectedAudio) {
+					return (
+						<AudioSettingsPanel
+							audio={selectedAudio}
+							onVolumeChange={(volume) => onAudioVolumeChange?.(selectedAudio.id, volume)}
+							onMutedChange={(muted) => onAudioMutedChange?.(selectedAudio.id, muted)}
+							onSoloedChange={(soloed) => onAudioSoloedChange?.(selectedAudio.id, soloed)}
+							onFadeInMsChange={(ms) => onAudioFadeInMsChange?.(selectedAudio.id, ms)}
+							onFadeOutMsChange={(ms) => onAudioFadeOutMsChange?.(selectedAudio.id, ms)}
+							onDelete={() => onAudioDelete?.(selectedAudio.id)}
+						/>
+					);
+				}
+
+				if (isMasterSelected) {
+					const masterAudioMock: AudioRegion = {
+						id: "master",
+						startMs: 0,
+						endMs: (videoDuration || 0) * 1000,
+						volume: masterAudioVolume,
+						muted: masterAudioMuted,
+						soloed: masterAudioSoloed,
+						audioPath: videoPath || "",
+						fadeInMs: 0,
+						fadeOutMs: 0,
+					};
+					return (
+						<AudioSettingsPanel
+							audio={masterAudioMock}
+							onVolumeChange={onMasterAudioVolumeChange || (() => { })}
+							onMutedChange={onMasterAudioMutedChange || (() => { })}
+							onSoloedChange={onMasterAudioSoloedChange || (() => { })}
+							onFadeInMsChange={() => { }}
+							onFadeOutMsChange={() => { }}
+							onDelete={() => { }}
+						/>
+					);
+				}
+
+				return (
+					<div className="flex flex-col items-center justify-center h-full text-slate-500 gap-2 py-12">
+						<Music className="w-8 h-8 opacity-20" />
+						<p className="text-xs">Select an audio region to edit its settings</p>
+					</div>
+				);
+			}
 			case "cursor":
 				return (
 					<section className="flex flex-col gap-2">

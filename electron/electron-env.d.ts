@@ -50,6 +50,14 @@ interface UpdateToastState {
 	delayMs: number;
 	isPreview?: boolean;
 	progressPercent?: number;
+	primaryAction?: "download-update" | "install-update" | "retry-check";
+}
+
+interface UpdateStatusSummary {
+	status: "idle" | "checking" | "up-to-date" | "available" | "downloading" | "ready" | "error";
+	currentVersion: string;
+	availableVersion: string | null;
+	detail?: string;
 }
 
 interface Window {
@@ -78,7 +86,7 @@ interface Window {
 				microphoneDeviceId?: string;
 				microphoneLabel?: string;
 			},
-		) => Promise<{ success: boolean; path?: string; message?: string; error?: string }>;
+		) => Promise<{ success: boolean; path?: string; message?: string; error?: string; userNotified?: boolean }>;
 		stopNativeScreenRecording: () => Promise<{
 			success: boolean;
 			path?: string;
@@ -208,17 +216,33 @@ interface Window {
 				error?: string;
 			}) => void,
 		) => () => void;
+		getWhisperModelStatus: (modelName: string) => Promise<{ success: boolean; exists: boolean; path?: string | null; error?: string }>;
+		downloadWhisperModel: (modelName: string) => Promise<{ success: boolean; path?: string; alreadyDownloaded?: boolean; error?: string }>;
+		deleteWhisperModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
+		onWhisperModelDownloadProgress: (
+			callback: (state: {
+				status: "idle" | "downloading" | "downloaded" | "error";
+				progress: number;
+				model: string;
+				path?: string | null;
+				error?: string;
+			}) => void,
+		) => () => void;
 		generateAutoCaptions: (options: {
 			videoPath: string;
 			whisperExecutablePath?: string;
 			whisperModelPath: string;
 			language?: string;
+			durationMs?: number;
+			startTimeMs?: number;
 		}) => Promise<{
 			success: boolean;
-			cues?: AutoCaptionCue[];
+			cues?: any[];
 			message?: string;
 			error?: string;
 		}>;
+		onAutoCaptionProgress: (callback: (payload: { progress: number }) => void) => () => void;
+		onAutoCaptionChunk: (callback: (payload: { cues: any[] }) => void) => () => void;
 		setCurrentVideoPath: (path: string) => Promise<{ success: boolean }>;
 		setCurrentRecordingSession: (session: {
 			videoPath: string;
@@ -303,7 +327,9 @@ interface Window {
 		dismissUpdateToast: () => Promise<{ success: boolean }>;
 		skipUpdateVersion: () => Promise<{ success: boolean; message?: string }>;
 		getCurrentUpdateToastPayload: () => Promise<UpdateToastState | null>;
+		getUpdateStatusSummary: () => Promise<UpdateStatusSummary>;
 		previewUpdateToast: () => Promise<{ success: boolean }>;
+		checkForAppUpdates: () => Promise<{ success: boolean; logPath: string }>;
 		onUpdateToastStateChanged: (callback: (payload: UpdateToastState | null) => void) => () => void;
 		onUpdateReadyToast: (callback: (payload: {
 			version: string;

@@ -198,6 +198,8 @@ export interface AnnotationRegion {
 	blurIntensity?: number;
 }
 
+export const DEFAULT_BLUR_INTENSITY = 12;
+
 export const DEFAULT_ANNOTATION_POSITION: AnnotationPosition = {
 	x: 50,
 	y: 50,
@@ -245,7 +247,20 @@ export interface AudioRegion {
 	endMs: number;
 	audioPath: string;
 	volume: number;
+	muted?: boolean;
+	soloed?: boolean;
+	fadeInMs?: number;
+	fadeOutMs?: number;
 }
+
+export interface TimeSelection {
+  startMs: number;
+  endMs: number;
+}
+
+
+
+
 
 export interface CaptionCue {
 	id: string;
@@ -263,10 +278,12 @@ export interface CaptionCueWord {
 }
 
 export type AutoCaptionAnimation = "none" | "fade" | "rise" | "pop";
+export type WhisperModel = "tiny" | "base" | "small" | "medium" | "large" | "custom";
 
 export interface AutoCaptionSettings {
 	enabled: boolean;
 	language: string;
+	selectedModel: WhisperModel;
 	fontFamily: string;
 	fontSize: number;
 	bottomOffset: number;
@@ -277,11 +294,13 @@ export interface AutoCaptionSettings {
 	textColor: string;
 	inactiveTextColor: string;
 	backgroundOpacity: number;
+	generationRange: "full" | "selected";
 }
 
 export const DEFAULT_AUTO_CAPTION_SETTINGS: AutoCaptionSettings = {
 	enabled: false,
 	language: "auto",
+	selectedModel: "small",
 	fontFamily: getDefaultCaptionFontFamily(),
 	fontSize: 30,
 	bottomOffset: 3,
@@ -291,8 +310,10 @@ export const DEFAULT_AUTO_CAPTION_SETTINGS: AutoCaptionSettings = {
 	boxRadius: 17.5,
 	textColor: "#FFFFFF",
 	inactiveTextColor: "#A3A3A3",
-	backgroundOpacity: 0.9,
+	backgroundOpacity: 0.1,
+	generationRange: "full",
 };
+
 
 export type PlaybackSpeed = 0.25 | 0.5 | 0.75 | 1.25 | 1.5 | 1.75 | 2;
 

@@ -2,7 +2,7 @@ import fs from "node:fs";
 import { createRequire } from "node:module";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
-import { BrowserWindow, ipcMain } from "electron";
+import { app, BrowserWindow, ipcMain } from "electron";
 import { USER_DATA_PATH } from "./appPaths";
 
 const __dirname = path.dirname(fileURLToPath(import.meta.url));
@@ -82,6 +82,9 @@ function persistHudOverlayCaptureProtectionSetting(enabled: boolean): void {
 }
 
 function getScreen() {
+	if (!app.isReady()) {
+		throw new Error("getScreen() called before app is ready. Ensure all screen access happens after app.whenReady().");
+	}
 	return nodeRequire("electron").screen as typeof import("electron").screen;
 }
 
@@ -323,6 +326,11 @@ export function getHudOverlayWindow(): BrowserWindow | null {
 
 export function createUpdateToastWindow(): BrowserWindow {
 	const initialBounds = getUpdateToastBounds();
+	const parentWindow =
+		process.platform === "darwin" && hudOverlayWindow && !hudOverlayWindow.isDestroyed()
+			? hudOverlayWindow
+			: undefined;
+	const useTransparentToastWindow = process.platform !== "win32";
 
 	const win = new BrowserWindow({
 		width: initialBounds.width,
@@ -330,15 +338,15 @@ export function createUpdateToastWindow(): BrowserWindow {
 		x: initialBounds.x,
 		y: initialBounds.y,
 		frame: false,
-		transparent: true,
+		transparent: useTransparentToastWindow,
 		resizable: false,
 		alwaysOnTop: true,
 		skipTaskbar: true,
 		hasShadow: false,
 		show: false,
 		focusable: true,
-		...(hudOverlayWindow && !hudOverlayWindow.isDestroyed() ? { parent: hudOverlayWindow } : {}),
-		backgroundColor: "#00000000",
+		...(parentWindow ? { parent: parentWindow } : {}),
+		backgroundColor: useTransparentToastWindow ? "#00000000" : "#101418",
 		webPreferences: {
 			preload: path.join(__dirname, "preload.mjs"),
 			nodeIntegration: false,
@@ -379,7 +387,12 @@ export function showUpdateToastWindow(): BrowserWindow {
 	const win = getUpdateToastWindow() ?? createUpdateToastWindow();
 	positionUpdateToastWindow();
 	if (!win.isVisible()) {
-		win.showInactive();
+		if (process.platform === "win32") {
+			win.show();
+			win.moveTop();
+		} else {
+			win.showInactive();
+		}
 	} else {
 		win.moveTop();
 	}

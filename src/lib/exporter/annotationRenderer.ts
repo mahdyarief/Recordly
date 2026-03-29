@@ -289,6 +289,8 @@ async function renderImage(
   });
 }
 
+
+
 export async function renderAnnotations(
   ctx: CanvasRenderingContext2D,
   annotations: AnnotationRegion[],
