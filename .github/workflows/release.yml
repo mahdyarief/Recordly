@@ -87,11 +87,16 @@ jobs:
         with:
           ref: ${{ needs.prepare-release.outputs.source_sha }}
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -127,13 +132,13 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile
 
       - name: Install app dependencies
         run: npx electron-builder install-app-deps
 
       - name: Build native macOS helpers
-        run: npm run build:native-helpers
+        run: pnpm run build:native-helpers
 
       - name: Build macOS x64
         run: |
@@ -167,11 +172,16 @@ jobs:
         with:
           ref: ${{ needs.prepare-release.outputs.source_sha }}
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -207,13 +217,13 @@ jobs:
           } >> "$GITHUB_ENV"
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile
 
       - name: Install app dependencies
         run: npx electron-builder install-app-deps
 
       - name: Build native macOS helpers
-        run: npm run build:native-helpers
+        run: pnpm run build:native-helpers
 
       - name: Build macOS arm64
         run: |
@@ -316,11 +326,16 @@ jobs:
         with:
           ref: ${{ needs.prepare-release.outputs.source_sha }}
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -345,7 +360,7 @@ jobs:
           Add-Content -Path $env:GITHUB_ENV -Value "WIN_CSC_KEY_PASSWORD=$env:WINDOWS_SIGNING_CERTIFICATE_PASSWORD"
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile
 
       - name: Remove stale uiohook build output
         shell: pwsh
@@ -360,7 +375,7 @@ jobs:
       - name: Build Windows x64
         shell: pwsh
         run: |
-          npm run build:platform-native-helpers
+          pnpm run build:platform-native-helpers
           npx tsc
           npx vite build
           npx electron-builder --win nsis --x64 --publish never
@@ -387,11 +402,16 @@ jobs:
         with:
           ref: ${{ needs.prepare-release.outputs.source_sha }}
 
+      - name: Install pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 9
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: 22
-          cache: npm
+          cache: pnpm
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -404,7 +424,7 @@ jobs:
           sudo apt-get install -y libx11-dev libxt-dev libxtst-dev libxkbfile-dev libxi-dev libxrandr-dev libxinerama-dev
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --frozen-lockfile
 
       - name: Remove stale uiohook build output
         run: rm -rf node_modules/uiohook-napi/build
@@ -415,7 +435,7 @@ jobs:
       - name: Build Linux x64
         run: |
           export CSC_IDENTITY_AUTO_DISCOVERY=false
-          npm run build:platform-native-helpers
+          pnpm run build:platform-native-helpers
           npx tsc
           npx vite build
           npx electron-builder --linux AppImage --x64 --publish never

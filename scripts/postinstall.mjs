@@ -9,13 +9,13 @@ const npmInvoker = hasNpmExecPath
 			shell: false,
 		}
 	: {
-			command: process.platform === "win32" ? "npm.cmd" : "npm",
+			command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
 			argsPrefix: [],
 			shell: process.platform === "win32",
 		};
 
 function runScript(scriptName) {
-	console.log(`[postinstall] Running npm script: ${scriptName}`);
+	console.log(`[postinstall] Running script: ${scriptName}`);
 	const result = spawnSync(npmInvoker.command, [...npmInvoker.argsPrefix, "run", scriptName], {
 		stdio: "inherit",
 		env: process.env,

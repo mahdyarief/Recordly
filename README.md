@@ -191,21 +191,21 @@ PKGBUILD, desktop entry, release sync, and optional **local-from-source** packag
 ```bash
 git clone https://github.com/webadderall/Recordly.git recordly
 cd recordly
-npm install
-npm run dev
+pnpm install
+pnpm run dev
 ```
 
 For packaged builds:
 
 ```bash
-npm run build
+pnpm run build
 ```
 
 Target-specific build commands are also available:
 
-- `npm run build:mac`
-- `npm run build:win`
-- `npm run build:linux`
+- `pnpm run build:mac`
+- `pnpm run build:win`
+- `pnpm run build:linux`
 
 ---
 

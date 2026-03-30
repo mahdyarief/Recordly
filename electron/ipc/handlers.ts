@@ -1,6 +1,6 @@
 import type { ChildProcessWithoutNullStreams } from 'node:child_process'
 import { execFile, spawn, spawnSync } from 'node:child_process'
-import { createWriteStream, constants as fsConstants, existsSync } from 'node:fs'
+import { createWriteStream, constants as fsConstants, existsSync, realpathSync } from 'node:fs'
 import fs from 'node:fs/promises'
 import { get as httpsGet } from 'node:https'
 import { createRequire } from 'node:module'
@@ -16,6 +16,7 @@ import { resolveWindowsCaptureDisplay } from './windowsCaptureSelection'
 
 const execFileAsync = promisify(execFile)
 const nodeRequire = createRequire(import.meta.url)
+const sleep = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms))
 
 const PROJECT_FILE_EXTENSION = 'recordly'
 const LEGACY_PROJECT_FILE_EXTENSIONS = ['openscreen']
@@ -322,7 +323,7 @@ function parseFfmpegDurationSeconds(stderr: string) {
   return hours * 3600 + minutes * 60 + seconds
 }
 
-async function validateRecordedVideo(videoPath: string) {
+async function validateRecordedVideo(videoPath: string, retryCount = 0) {
   const stat = await fs.stat(videoPath)
   if (!stat.isFile()) {
     throw new Error(`Recorded output is not a file: ${videoPath}`)
@@ -344,8 +345,17 @@ async function validateRecordedVideo(videoPath: string) {
     stderr = result.stderr
   } catch (error) {
     const execError = error as NodeJS.ErrnoException & { stderr?: string }
+    
+    // If we haven't exhausted retries, wait a bit and try again.
+    // This handles cases where the file might still be locked or being flushed by the OS.
+    if (retryCount < 3) {
+      await sleep(250 * (retryCount + 1))
+      return validateRecordedVideo(videoPath, retryCount + 1)
+    }
+
     const output = execError.stderr?.trim()
-    throw new Error(output || `Recorded output could not be decoded: ${videoPath}`)
+    const exitCode = execError.code !== undefined ? ` (Exit code: ${execError.code})` : ''
+    throw new Error(output || `Recorded output could not be decoded${exitCode}: ${videoPath}`)
   }
 
   if (!/Stream #.*Video:/i.test(stderr)) {
@@ -1061,15 +1071,15 @@ function parseWindowId(sourceId?: string) {
 }
 
 function loadFfmpegStatic() {
-  const moduleExports = nodeRequire('ffmpeg-static')
-  if (typeof moduleExports === 'string') {
-    return moduleExports
+  try {
+    const moduleExports = nodeRequire('ffmpeg-static')
+    const resolvedPath = typeof moduleExports === 'string' ? moduleExports : moduleExports?.default
+    if (typeof resolvedPath === 'string') {
+      return realpathSync(resolvedPath)
+    }
+  } catch (error) {
+    console.error('[ffmpeg] Failed to load ffmpeg-static:', error)
   }
-
-  if (typeof moduleExports?.default === 'string') {
-    return moduleExports.default as string
-  }
-
   return null
 }
 
@@ -1092,11 +1102,22 @@ function getFfmpegBinaryPath() {
     throw new Error('FFmpeg binary is unavailable. Install ffmpeg-static for this platform.')
   }
 
+  let finalPath = ffmpegStatic
   if (app.isPackaged) {
-    return ffmpegStatic.replace(/\.asar([\/\\])/, '.asar.unpacked$1')
+    finalPath = ffmpegStatic.replace(/\.asar([\/\\])/, '.asar.unpacked$1')
   }
 
-  return ffmpegStatic
+  // Normalize and resolve real path to handle potential pnpm symlink issues
+  try {
+    finalPath = path.normalize(finalPath)
+    if (existsSync(finalPath)) {
+      return realpathSync(finalPath)
+    }
+  } catch (error) {
+    console.warn('[ffmpeg] Failed to resolve real path for ffmpeg:', error)
+  }
+
+  return finalPath
 }
 
 function runWhisperWithProgress(
@@ -2149,7 +2170,11 @@ async function muxNativeWindowsVideoWithAudio(videoPath: string, systemAudioPath
         '-shortest',
         mixedOutputPath,
       ],
-      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
+      {
+        timeout: 120000,
+        maxBuffer: 10 * 1024 * 1024,
+        shell: process.platform === 'win32'
+      },
     )
   } else {
     // Single audio track
@@ -2166,7 +2191,11 @@ async function muxNativeWindowsVideoWithAudio(videoPath: string, systemAudioPath
         '-shortest',
         mixedOutputPath,
       ],
-      { timeout: 120000, maxBuffer: 10 * 1024 * 1024 },
+      {
+        timeout: 120000,
+        maxBuffer: 10 * 1024 * 1024,
+        shell: process.platform === 'win32'
+      },
     )
   }
 
@@ -4042,6 +4071,9 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
       return { success: false, message: 'No native Windows video pending for mux' }
     }
 
+    // Windows sometimes needs a moment to fully release file handles after process exit
+    await sleep(200)
+
     try {
       if (windowsSystemAudioPath || windowsMicAudioPath) {
         await muxNativeWindowsVideoWithAudio(videoPath, windowsSystemAudioPath, windowsMicAudioPath)
@@ -4055,9 +4087,11 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
         outputPath: videoPath,
         fileSizeBytes: await getFileSizeIfPresent(videoPath),
       })
+
       return await finalizeStoredVideo(videoPath)
     } catch (error) {
-      console.error('Failed to mux native Windows recording:', error)
+      console.error('Failed to finalize native Windows recording:', error)
+
       recordNativeCaptureDiagnostics({
         backend: 'windows-wgc',
         phase: 'mux',
@@ -4067,12 +4101,20 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
         fileSizeBytes: await getFileSizeIfPresent(videoPath),
         error: String(error),
       })
+
       windowsSystemAudioPath = null
       windowsMicAudioPath = null
+
+      // Attempt to return the original video even if muxing failed,
+      // as long as the original video is readable.
       try {
         return await finalizeStoredVideo(videoPath)
-      } catch {
-        return { success: false, message: 'Failed to mux native Windows recording', error: String(error) }
+      } catch (finalError) {
+        return {
+          success: false,
+          message: 'Failed to process recorded video',
+          error: String(finalError)
+        }
       }
     }
   })
@@ -4093,6 +4135,7 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
       ffmpegCaptureProcess = spawn(ffmpegPath, args, {
         cwd: recordingsDir,
         stdio: ['pipe', 'pipe', 'pipe'],
+        shell: process.platform === 'win32',
       })
 
       ffmpegCaptureProcess.stdout.on('data', (chunk: Buffer) => {

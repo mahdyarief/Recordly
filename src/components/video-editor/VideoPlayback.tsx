@@ -1044,29 +1044,29 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
           );
         }
 
-        app = new Application();
+        try {
+          console.log("[VideoPlayback] Initializing Pixi Application...");
+          app = new Application();
+          appRef.current = app;
 
-        await app.init({
-          width: container.clientWidth,
-          height: container.clientHeight,
-          backgroundAlpha: 0,
-          antialias: true,
-          resolution: window.devicePixelRatio || 1,
-          autoDensity: true,
-        });
-
-        app.ticker.maxFPS = 60;
+          await app.init({
+            preference: "webgl",
+            backgroundAlpha: 0,
+            eventMode: "none",
+            antialias: true,
+            resolution: window.devicePixelRatio || 1,
+          });
+          console.log("[VideoPlayback] Pixi initialized successfully.");
+        } catch (error) {
+          console.error("[VideoPlayback] Failed to init Pixi app:", error);
+          throw error;
+        }
 
         if (!mounted) {
-          app.destroy(true, {
-            children: true,
-            texture: false,
-            textureSource: false,
-          });
+          app.destroy({ removeView: true });
           return;
         }
 
-        appRef.current = app;
         container.appendChild(app.canvas);
 
         // Camera container - this will be scaled/positioned for zoom
@@ -1118,11 +1118,14 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
           cursorOverlayRef.current.destroy();
           cursorOverlayRef.current = null;
         }
-        if (app && app.renderer) {
-          app.destroy(true, {
-            children: true,
-            texture: false,
-            textureSource: false,
+        if (app) {
+          console.log("[VideoPlayback] Destroying Pixi Application...");
+          // In Pixi v8, destroy the stage separately to clean up children
+          if (app.stage) {
+            app.stage.destroy({ children: true });
+          }
+          app.destroy({
+            removeView: true,
           });
         }
         appRef.current = null;
@@ -1146,6 +1149,32 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         videoReadyRafRef.current = null;
       }
     }, [videoPath]);
+
+    // Ensure videoReady is set if metadata is already loaded on mount/update
+    useEffect(() => {
+      const video = videoRef.current;
+      if (!video || videoReady) return;
+
+      const checkReady = () => {
+        const hasDimensions = video.videoWidth > 0 && video.videoHeight > 0;
+        const hasData = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
+        if (hasDimensions && hasData) {
+          console.log("[VideoPlayback] Video already ready on check, setting videoReady to true.");
+          setVideoReady(true);
+          return true;
+        }
+        return false;
+      };
+
+      if (!checkReady()) {
+        const interval = setInterval(() => {
+          if (checkReady()) {
+            clearInterval(interval);
+          }
+        }, 100);
+        return () => clearInterval(interval);
+      }
+    }, [videoPath, videoReady, pixiReady]);
 
     useEffect(() => {
       if (!pixiReady || !videoReady) return;
@@ -1511,6 +1540,7 @@ const VideoPlayback = forwardRef<VideoPlaybackRef, VideoPlaybackProps>(
         const hasDimensions = video.videoWidth > 0 && video.videoHeight > 0;
         const hasData = video.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA;
         if (hasDimensions && hasData) {
+          console.log("[VideoPlayback] Video reached renderable state, setting videoReady to true.");
           videoReadyRafRef.current = null;
           setVideoReady(true);
           return;
