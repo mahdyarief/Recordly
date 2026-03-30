@@ -2824,25 +2824,32 @@ async function finalizeStoredVideo(videoPath: string) {
 }
 
 async function recoverNativeMacCaptureOutput() {
-  const diagnosticsPath =
+  const macDiagnostics =
     lastNativeCaptureDiagnostics?.backend === 'mac-screencapturekit'
-      ? lastNativeCaptureDiagnostics.outputPath ?? null
+      ? lastNativeCaptureDiagnostics
       : null
+  const diagnosticsPath = macDiagnostics?.outputPath ?? null
   const candidatePath = nativeCaptureTargetPath ?? diagnosticsPath
+  const systemAudioPath = nativeCaptureSystemAudioPath ?? macDiagnostics?.systemAudioPath ?? null
+  const microphonePath = nativeCaptureMicrophonePath ?? macDiagnostics?.microphonePath ?? null
 
   if (!candidatePath) {
     return null
   }
 
   try {
+    if (systemAudioPath || microphonePath) {
+      await muxNativeMacRecordingWithAudio(candidatePath, systemAudioPath, microphonePath)
+    }
+
     return await finalizeStoredVideo(candidatePath)
   } catch (error) {
     recordNativeCaptureDiagnostics({
       backend: 'mac-screencapturekit',
       phase: 'stop',
       outputPath: candidatePath,
-      systemAudioPath: nativeCaptureSystemAudioPath,
-      microphonePath: nativeCaptureMicrophonePath,
+      systemAudioPath,
+      microphonePath,
       processOutput: nativeCaptureOutputBuffer.trim() || undefined,
       fileSizeBytes: await getFileSizeIfPresent(candidatePath),
       error: String(error),
@@ -5071,4 +5078,3 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
     }
   })
 }
-
