@@ -64,7 +64,8 @@ import {
 } from "./projectPersistence";
 import { type EditorEffectSection, SettingsPanel } from "./SettingsPanel";
 import {
-	APP_HEADER_ACTION_BUTTON_CLASS,
+	APP_HEADER_ICON_BUTTON_CLASS,
+	DiscordLinkButton,
 	FeedbackDialog,
 	KeyboardShortcutsDialog,
 } from "./TutorialHelp";
@@ -299,7 +300,7 @@ function LanguageSwitcher() {
 			variant="ghost"
 			size="sm"
 			onClick={() => setLocale(next)}
-			className={APP_HEADER_ACTION_BUTTON_CLASS}
+			className={APP_HEADER_ICON_BUTTON_CLASS}
 			title={t("common.app.language", "Language")}
 			aria-label={t("common.app.language", "Language")}
 		>
@@ -450,7 +451,7 @@ export default function VideoEditor() {
 	const masterGainRef = useRef<GainNode | null>(null);
 	const audioRegionNodesRef = useRef<Map<string, { source: MediaElementAudioSourceNode; gain: GainNode }>>(new Map());
 	const videoAudioNodeRef = useRef<{ source: MediaElementAudioSourceNode; gain: GainNode } | null>(null);
-	
+
 	const projectBrowserTriggerRef = useRef<HTMLButtonElement | null>(null);
 	const projectBrowserFallbackTriggerRef = useRef<HTMLButtonElement | null>(null);
 	const nextZoomIdRef = useRef(1);
@@ -2050,7 +2051,7 @@ export default function VideoEditor() {
 			}
 			return;
 		}
-		
+
 		try {
 			const ctx = new (window.AudioContext || (window as any).webkitAudioContext)();
 			const masterGain = ctx.createGain();
@@ -3354,12 +3355,13 @@ export default function VideoEditor() {
 						variant="ghost"
 						size="sm"
 						onClick={() => void openRecordingsFolder()}
-						className={`${APP_HEADER_ACTION_BUTTON_CLASS} px-2.5`}
+						className={`${APP_HEADER_ICON_BUTTON_CLASS} px-2.5`}
 						title={t("common.app.manageRecordings", "Open recordings folder")}
 						aria-label={t("common.app.manageRecordings", "Open recordings folder")}
 					>
 						<FolderOpen className="h-4 w-4" />
 					</Button>
+					<DiscordLinkButton />
 					<KeyboardShortcutsDialog />
 					<FeedbackDialog />
 					<div className="ml-1 h-5 w-px bg-white/10" />
