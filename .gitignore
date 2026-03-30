@@ -35,6 +35,7 @@ vite.config.d.ts
 # Native capture build artifacts
 electron/native/wgc-capture/build/
 electron/native/cursor-monitor/build/
+electron/native/bin/win32-x64/
 
 # Local build tools and caches
 .cache/
