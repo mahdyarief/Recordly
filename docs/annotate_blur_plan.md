@@ -61,7 +61,7 @@ This plan outlines the steps to add a "Blur" annotation type, allowing users to 
 ## Verification Plan
 
 ### Automated Tests
-- Run `npm test` to ensure existing annotation logic (text/arrows) isn't regressed.
+- Run `pnpm test` to ensure existing annotation logic (text/arrows) isn't regressed.
 - Add a test case in `annotationRenderer.test.ts` (if it exists) to verify the blur case doesn't crash the export pipeline.
 
 ### Manual Verification

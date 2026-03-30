@@ -1,0 +1,317 @@
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm.
+npm warn Unknown project config "strict-peer-dependencies". This will stop working in the next major version of npm.
+src\features\editor\components\ShortcutsConfigDialog.tsx:50:2 lint/correctness/useExhaustiveDependencies  FIXABLE  ━━━━━━━━━━
+
+  ! This hook does not specify its dependency on draft.
+  
+    48 │ 	}, [isConfigOpen, shortcuts]);
+    49 │ 
+  > 50 │ 	useEffect(() => {
+       │ 	^^^^^^^^^
+    51 │ 		if (!captureFor) return;
+    52 │ 
+  
+  i This dependency is being used here, but is not specified in the hook dependency list.
+  
+    69 │ 			};
+    70 │ 
+  > 71 │ 			const found = findConflict(binding, captureFor, draft);
+       │ 			                                                ^^^^^
+    72 │ 			setCaptureFor(null);
+    73 │ 
+  
+  i React relies on hook dependencies to determine when to re-compute Effects.
+    Failing to specify dependencies can result in Effects not updating correctly when state changes.
+    These "stale closures" are a common source of surprising bugs.
+  
+  i Unsafe fix: Add the missing dependency to the list.
+  
+    89 │ → },·[captureFor,·t,·draft]);
+       │                    +++++++   
+
+src\features\editor\components\VideoEditor\VideoPlayback.tsx:3:15 lint/style/useComponentExportOnlyModules ━━━━━━━━━━
+
+  ! Exporting a non-component with components is not allowed.
+  
+    1 │ import { forwardRef, useImperativeHandle } from "react";
+    2 │ import { type VideoPlaybackRef } from "./types";
+  > 3 │ export type { VideoPlaybackRef };
+      │               ^^^^^^^^^^^^^^^^
+    4 │ import { AnnotationLayers } from "./videoPlayback/components/AnnotationLayers";
+    5 │ import { CaptionOverlay } from "./videoPlayback/components/CaptionOverlay";
+  
+  i Fast Refresh only works when a file only exports components.
+  
+  i Consider separating non-component exports into a new file.
+  
+  i If it is a component, it may not be following the variable naming conventions.
+  
+
+src\features\editor\components\VideoEditor\VideoPlayback.tsx:85:16 lint/style/useComponentExportOnlyModules ━━━━━━━━━━
+
+  ! Exporting a non-component with components is not allowed.
+  
+    84 │ VideoPlayback.displayName = "VideoPlayback";
+  > 85 │ export default VideoPlayback;
+       │                ^^^^^^^^^^^^^
+    86 │ 
+  
+  i Fast Refresh only works when a file only exports components.
+  
+  i Consider separating non-component exports into a new file.
+  
+  i If it is a component, it may not be following the variable naming conventions.
+  
+
+src\features\captions\components\CaptionSettingsPanel.tsx:73:54 lint/suspicious/noEmptyBlockStatements ━━━━━━━━━━
+
+  × Unexpected empty block.
+  
+    71 │ 						selectedId={props.selectedCaptionId || null}
+    72 │ 						captions={props.autoCaptions}
+  > 73 │ 						onChange={props.onAutoCaptionsChange || (() => {})}
+       │ 						                                               ^^
+    74 │ 						onSelect={props.onSelectCaption || (() => {})}
+    75 │ 						onSeek={props.onSeek}
+  
+  i Empty blocks are usually the result of an incomplete refactoring. Remove the empty block or add a comment inside it if it is intentional.
+  
+
+src\features\captions\components\CaptionSettingsPanel.tsx:74:49 lint/suspicious/noEmptyBlockStatements ━━━━━━━━━━
+
+  × Unexpected empty block.
+  
+    72 │ 						captions={props.autoCaptions}
+    73 │ 						onChange={props.onAutoCaptionsChange || (() => {})}
+  > 74 │ 						onSelect={props.onSelectCaption || (() => {})}
+       │ 						                                          ^^
+    75 │ 						onSeek={props.onSeek}
+    76 │ 					/>
+  
+  i Empty blocks are usually the result of an incomplete refactoring. Remove the empty block or add a comment inside it if it is intentional.
+  
+
+src\features\captions\domain\entities\CaptionCue.ts:18:42 lint/suspicious/noExplicitAny ━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    16 │ }
+    17 │ 
+  > 18 │ export function normalizeCaptionCue(cue: any): CaptionCue | null {
+       │                                          ^^^
+    19 │ 	if (!cue || typeof cue.id !== "string") return null;
+    20 │ 
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\captions\domain\entities\CaptionCue.ts:28:20 lint/suspicious/noExplicitAny ━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    26 │ 	const words: CaptionCueWord[] | undefined = Array.isArray(cue.words)
+    27 │ 		? cue.words
+  > 28 │ 				.filter((word: any): word is CaptionCueWord =>
+       │ 				               ^^^
+    29 │ 					Boolean(word && typeof word.text === "string"),
+    30 │ 				)
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\captions\domain\entities\CaptionCue.ts:31:17 lint/suspicious/noExplicitAny ━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    29 │ 					Boolean(word && typeof word.text === "string"),
+    30 │ 				)
+  > 31 │ 				.map((word: any) => {
+       │ 				            ^^^
+    32 │ 					const rawWordStart = isFiniteNumber(word.startMs) ? Math.round(word.startMs) : startMs;
+    33 │ 					const rawWordEnd = isFiniteNumber(word.endMs) ? Math.round(word.endMs) : rawWordStart + 1;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\captions\domain\entities\CaptionCue.ts:44:20 lint/suspicious/noExplicitAny ━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    42 │ 					};
+    43 │ 				})
+  > 44 │ 				.filter((word: any) => word.text.length > 0)
+       │ 				               ^^^
+    45 │ 		: undefined;
+    46 │ 
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\captions\domain\ports\CaptionGeneratorPort.ts:17:11 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    15 │ 		cues?: CaptionCue[];
+    16 │ 		message?: string;
+  > 17 │ 		error?: any;
+       │ 		        ^^^
+    18 │ 	}>;
+    19 │ 	onProgress(callback: (progress: number) => void): () => void;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\editor\components\CropControl.tsx:111:12 lint/suspicious/noEmptyBlockStatements ━━━━━━━━━━
+
+  × Unexpected empty block.
+  
+    109 │ 			try {
+    110 │ 				e.currentTarget.releasePointerCapture(e.pointerId);
+  > 111 │ 			} catch {}
+        │ 			        ^^
+    112 │ 		}
+    113 │ 		setIsDragging(null);
+  
+  i Empty blocks are usually the result of an incomplete refactoring. Remove the empty block or add a comment inside it if it is intentional.
+  
+
+src\features\editor\components\VideoEditor\EditorHeader.tsx:40:23 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    38 │ 	openRecordingsFolder: () => void;
+    39 │ 	projectBrowserTriggerRef: React.RefObject<HTMLButtonElement>;
+  > 40 │ 	mp4OutputDimensions: any;
+       │ 	                     ^^^
+    41 │ 	gifOutputDimensions: any;
+    42 │ }
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\editor\components\VideoEditor\EditorHeader.tsx:41:23 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    39 │ 	projectBrowserTriggerRef: React.RefObject<HTMLButtonElement>;
+    40 │ 	mp4OutputDimensions: any;
+  > 41 │ 	gifOutputDimensions: any;
+       │ 	                     ^^^
+    42 │ }
+    43 │ 
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\editor\components\VideoEditor\VideoPlayback.tsx:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import { forwardRef, useImperativeHandle } from "react";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { type VideoPlaybackRef } from "./types";
+    3 │ export type { VideoPlaybackRef };
+  
+  i Safe fix: Organize Imports (Biome)
+  
+     2  2 │   import { type VideoPlaybackRef } from "./types";
+     3  3 │   export type { VideoPlaybackRef };
+        4 │ + 
+     4  5 │   import { AnnotationLayers } from "./videoPlayback/components/AnnotationLayers";
+     5  6 │   import { CaptionOverlay } from "./videoPlayback/components/CaptionOverlay";
+  
+
+src\features\editor\components\VideoEditor\VideoPlayback.tsx:9:59 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+     7 │ import { useVideoPlaybackLogic } from "./videoPlayback/hooks/useVideoPlaybackLogic";
+     8 │ 
+   > 9 │ export const VideoPlayback = forwardRef<VideoPlaybackRef, any>((props, ref) => {
+       │                                                           ^^^
+    10 │ 	const logic = useVideoPlaybackLogic(props);
+    11 │ 
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\editor\components\VideoEditor\VideoPlayback.tsx:20:29 lint/suspicious/noEmptyBlockStatements ━━━━━━━━━━
+
+  × Unexpected empty block.
+  
+    18 │ 		play: async () => logic.videoRef.current?.play(),
+    19 │ 		pause: () => logic.videoRef.current?.pause(),
+  > 20 │ 		refreshFrame: async () => {}, // Handled by Pixi ticker
+       │ 		                          ^^
+    21 │ 		seek: (time: number) => logic.seek(time),
+    22 │ 	}));
+  
+  i Empty blocks are usually the result of an incomplete refactoring. Remove the empty block or add a comment inside it if it is intentional.
+  
+
+src\features\timeline\domain\services\CursorTelemetryService.ts:61:31 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    59 │ 			sample.interactionType === "double-click" ||
+    60 │ 			sample.interactionType === "contextmenu" ||
+  > 61 │ 			(sample.interactionType as any) === "right-click" ||
+       │ 			                           ^^^
+    62 │ 			(sample.interactionType as any) === "middle-click"
+    63 │ 		) {
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\timeline\domain\services\CursorTelemetryService.ts:62:31 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    60 │ 			sample.interactionType === "contextmenu" ||
+    61 │ 			(sample.interactionType as any) === "right-click" ||
+  > 62 │ 			(sample.interactionType as any) === "middle-click"
+       │ 			                           ^^^
+    63 │ 		) {
+    64 │ 			continue;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\timeline\domain\services\CursorTelemetryService.ts:120:31 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    118 │ 			sample.interactionType === "double-click" ||
+    119 │ 			sample.interactionType === "contextmenu" ||
+  > 120 │ 			(sample.interactionType as any) === "right-click" ||
+        │ 			                           ^^^
+    121 │ 			(sample.interactionType as any) === "middle-click"
+    122 │ 		) {
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\timeline\domain\services\CursorTelemetryService.ts:121:31 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    119 │ 			sample.interactionType === "contextmenu" ||
+    120 │ 			(sample.interactionType as any) === "right-click" ||
+  > 121 │ 			(sample.interactionType as any) === "middle-click"
+        │ 			                           ^^^
+    122 │ 		) {
+    123 │ 			continue;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 388.
+Checked 210 files in 832ms. No fixes applied.
+Found 385 errors.
+Found 23 warnings.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

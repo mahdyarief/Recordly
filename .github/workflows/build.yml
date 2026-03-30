@@ -11,13 +11,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Install app dependencies
         run: npx electron-builder install-app-deps
@@ -25,9 +31,9 @@ jobs:
       - name: Build Windows app
         shell: pwsh
         run: |
-          npm run build:platform-native-helpers
-          npx tsc
-          npx vite build
+          pnpm build:platform-native-helpers
+          pnpm tsc
+          pnpm vite build
           npx electron-builder --win nsis --x64 --publish never
 
       - name: Upload Windows build
@@ -43,10 +49,16 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'pnpm'
 
       - name: Setup Python
         uses: actions/setup-python@v5
@@ -54,16 +66,16 @@ jobs:
           python-version: '3.11'
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Install app dependencies
         run: npx electron-builder install-app-deps
 
       - name: Build macOS app
         run: |
-          npm run build:native-helpers
-          npx tsc
-          npx vite build
+          pnpm build:native-helpers
+          pnpm tsc
+          pnpm vite build
           npx electron-builder --mac dmg zip --publish never
 
       - name: Upload macOS build
@@ -82,13 +94,19 @@ jobs:
       - name: Checkout code
         uses: actions/checkout@v4
 
+      - name: Setup pnpm
+        uses: pnpm/action-setup@v4
+        with:
+          version: 10
+
       - name: Setup Node.js
         uses: actions/setup-node@v4
         with:
           node-version: '22'
+          cache: 'pnpm'
 
       - name: Install dependencies
-        run: npm ci --ignore-scripts
+        run: pnpm install --no-frozen-lockfile --ignore-scripts
 
       - name: Install Linux native build dependencies
         run: |
@@ -103,9 +121,9 @@ jobs:
 
       - name: Build Linux app
         run: |
-          npm run build:platform-native-helpers
-          npx tsc
-          npx vite build
+          pnpm build:platform-native-helpers
+          pnpm tsc
+          pnpm vite build
           npx electron-builder --linux AppImage --x64 --publish never
 
       - name: Upload Linux build

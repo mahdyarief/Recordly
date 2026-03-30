@@ -83,7 +83,9 @@ function persistHudOverlayCaptureProtectionSetting(enabled: boolean): void {
 
 function getScreen() {
 	if (!app.isReady()) {
-		throw new Error("getScreen() called before app is ready. Ensure all screen access happens after app.whenReady().");
+		throw new Error(
+			"getScreen() called before app is ready. Ensure all screen access happens after app.whenReady().",
+		);
 	}
 	return nodeRequire("electron").screen as typeof import("electron").screen;
 }
@@ -293,12 +295,29 @@ export function createHudOverlayWindow(): BrowserWindow {
 	}
 
 	win.webContents.on("did-finish-load", () => {
+		console.log("[hud-overlay] did-finish-load");
 		win?.webContents.send("main-process-message", new Date().toLocaleString());
 		setTimeout(() => {
 			if (!win.isDestroyed()) {
 				win.show();
 			}
 		}, 100);
+	});
+
+	// Emergency show after 10 seconds if loading hangs (safety fallback)
+	setTimeout(() => {
+		if (!win.isDestroyed() && !win.isVisible()) {
+			console.warn("[hud-overlay] Emergency show triggered (load took >10s)");
+			win.show();
+		}
+	}, 10000);
+
+	win.webContents.on("did-fail-load", (_event, errorCode, errorDescription, validatedURL) => {
+		console.error("[hud-overlay] did-fail-load", {
+			errorCode,
+			errorDescription,
+			validatedURL,
+		});
 	});
 
 	hudOverlayWindow = win;
@@ -310,9 +329,13 @@ export function createHudOverlayWindow(): BrowserWindow {
 	});
 
 	if (VITE_DEV_SERVER_URL) {
-		win.loadURL(VITE_DEV_SERVER_URL + "?windowType=hud-overlay");
+		const targetUrl = VITE_DEV_SERVER_URL + "?windowType=hud-overlay";
+		console.log("[main] Loading dev URL:", targetUrl);
+		win.loadURL(targetUrl);
 	} else {
-		win.loadFile(path.join(RENDERER_DIST, "index.html"), {
+		const targetPath = path.join(RENDERER_DIST, "index.html");
+		console.log("[main] Loading prod path:", targetPath);
+		win.loadFile(targetPath, {
 			query: { windowType: "hud-overlay" },
 		});
 	}

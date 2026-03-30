@@ -8,8 +8,8 @@ import {
 	dialog,
 	ipcMain,
 	Menu,
-	nativeImage,
 	Notification,
+	nativeImage,
 	session,
 	systemPreferences,
 	Tray,
@@ -19,28 +19,28 @@ import { showCursor } from "./cursorHider";
 import {
 	getSelectedSourceId,
 	killWindowsCaptureProcess,
-	registerIpcHandlers,
-} from "./ipc/handlers";
+	registerAllHandlers as registerIpcHandlers,
+} from "./ipc/handlers/index";
+import type { UpdateToastPayload } from "./updater";
 import {
 	checkForAppUpdates,
+	deferUpdateReminder,
 	dismissUpdateToast,
 	downloadAvailableUpdate,
-	deferUpdateReminder,
 	getCurrentUpdateToastPayload,
 	getUpdaterLogPath,
 	getUpdateStatusSummary,
 	installDownloadedUpdateNow,
 	previewUpdateToast,
-	skipAvailableUpdateVersion,
 	setupAutoUpdates,
+	skipAvailableUpdateVersion,
 } from "./updater";
-import type { UpdateToastPayload } from "./updater";
 import {
 	createEditorWindow,
 	createHudOverlayWindow,
 	createSourceSelectorWindow,
-	getUpdateToastWindow,
 	getHudOverlayWindow,
+	getUpdateToastWindow,
 	hideUpdateToastWindow,
 	showUpdateToastWindow,
 } from "./windows";
@@ -373,7 +373,9 @@ function sendUpdateToastToWindows(channel: "update-toast-state", payload: unknow
 			return false;
 		}
 
-		const notificationKey = [updatePayload.phase, updatePayload.version, updatePayload.detail].join(":");
+		const notificationKey = [updatePayload.phase, updatePayload.version, updatePayload.detail].join(
+			":",
+		);
 		if (activeUpdateNotificationKey === notificationKey) {
 			return true;
 		}
@@ -535,15 +537,15 @@ function updateTrayMenu(recording: boolean = false) {
 }
 
 function createEditorWindowWrapper() {
-	if (mainWindow) {
-		closeEditorWindowBypassingUnsavedPrompt(mainWindow);
-		mainWindow = null;
-	}
-	mainWindow = createEditorWindow();
+	const oldWindow = mainWindow;
+	const newWindow = createEditorWindow();
+
+	mainWindow = newWindow;
 	editorHasUnsavedChanges = false;
+	isForceClosing = false;
 
 	mainWindow.on("closed", () => {
-		if (mainWindow?.isDestroyed()) {
+		if (mainWindow === newWindow) {
 			mainWindow = null;
 		}
 		isForceClosing = false;
@@ -578,6 +580,11 @@ function createEditorWindowWrapper() {
 			closeEditorWindowBypassingUnsavedPrompt(mainWindow);
 		}
 	});
+
+	// Close the old window only after the new one was initiated
+	if (oldWindow && !oldWindow.isDestroyed()) {
+		closeEditorWindowBypassingUnsavedPrompt(oldWindow);
+	}
 }
 
 function createSourceSelectorWindowWrapper() {

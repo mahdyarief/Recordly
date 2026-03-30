@@ -1,0 +1,457 @@
+npm warn Unknown project config "shamefully-hoist". This will stop working in the next major version of npm.
+npm warn Unknown project config "strict-peer-dependencies". This will stop working in the next major version of npm.
+src\features\editor\components\TutorialHelp.tsx:30:14 lint/style/useComponentExportOnlyModules ━━━━━━━━━━
+
+  ! Exporting a non-component with components is not allowed.
+  
+    28 │ const RECORDLY_X_URL = "https://x.com/webadderall";
+    29 │ const CONTACT_EMAIL = "youngchen3442@gmail.com";
+  > 30 │ export const APP_HEADER_ACTION_BUTTON_CLASS =
+       │              ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    31 │ 	"h-7 px-2 text-xs text-slate-400 hover:bg-white/10 hover:text-slate-200 transition-all gap-1.5";
+    32 │ 
+  
+  i Fast Refresh only works when a file only exports components.
+  
+  i Consider separating non-component exports into a new file.
+  
+  i If it is a component, it may not be following the variable naming conventions.
+  
+
+src\features\editor\components\VideoEditor\VideoPlayback.tsx:104:16 lint/style/useComponentExportOnlyModules ━━━━━━━━━━
+
+  ! Exporting a non-component with components is not allowed.
+  
+    103 │ VideoPlayback.displayName = "VideoPlayback";
+  > 104 │ export default VideoPlayback;
+        │                ^^^^^^^^^^^^^
+    105 │ 
+  
+  i Fast Refresh only works when a file only exports components.
+  
+  i Consider separating non-component exports into a new file.
+  
+  i If it is a component, it may not be following the variable naming conventions.
+  
+
+src\features\captions\components\CaptionSettingsPanel.tsx format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    71 71 │   						selectedId={props.selectedCaptionId || null}
+    72 72 │   						captions={props.autoCaptions}
+    73    │ - → → → → → → onChange={props.onAutoCaptionsChange·||·(()·=>·{
+    74    │ - → → → → → → → /*·no-op·if·handler·missing·*/
+    75    │ - → → → → → → })}
+    76    │ - → → → → → → onSelect={props.onSelectCaption·||·(()·=>·{
+    77    │ - → → → → → → → /*·no-op·if·handler·missing·*/
+    78    │ - → → → → → → })}
+       73 │ + → → → → → → onChange={
+       74 │ + → → → → → → → props.onAutoCaptionsChange·||
+       75 │ + → → → → → → → (()·=>·{
+       76 │ + → → → → → → → → /*·no-op·if·handler·missing·*/
+       77 │ + → → → → → → → })
+       78 │ + → → → → → → }
+       79 │ + → → → → → → onSelect={
+       80 │ + → → → → → → → props.onSelectCaption·||
+       81 │ + → → → → → → → (()·=>·{
+       82 │ + → → → → → → → → /*·no-op·if·handler·missing·*/
+       83 │ + → → → → → → → })
+       84 │ + → → → → → → }
+    79 85 │   						onSeek={props.onSeek}
+    80 86 │   					/>
+  
+
+src\features\captions\domain\entities\CaptionCue.ts:18:42 lint/suspicious/noExplicitAny ━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    16 │ }
+    17 │ 
+  > 18 │ export function normalizeCaptionCue(cue: any): CaptionCue | null {
+       │                                          ^^^
+    19 │ 	if (!cue || typeof cue.id !== "string") return null;
+    20 │ 
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\captions\domain\entities\CaptionCue.ts:29:38 lint/suspicious/noExplicitAny ━━━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    27 │ 		? cue.words
+    28 │ 				.filter((word: unknown): word is CaptionCueWord =>
+  > 29 │ 					Boolean(word && typeof (word as any).text === "string"),
+       │ 					                                ^^^
+    30 │ 				)
+    31 │ 				.map((word: CaptionCueWord) => {
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\captions\domain\ports\CaptionGeneratorPort.ts:17:11 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    15 │ 		cues?: CaptionCue[];
+    16 │ 		message?: string;
+  > 17 │ 		error?: any;
+       │ 		        ^^^
+    18 │ 	}>;
+    19 │ 	onProgress(callback: (progress: number) => void): () => void;
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\editor\audio.test.ts:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━━━━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import * as fc from "fast-check";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { describe, expect, it } from "vitest";
+    3 │ import { fromFileUrl, normalizeProjectEditor, toFileUrl } from "./projectPersistence";
+  
+  i Safe fix: Organize Imports (Biome)
+  
+      1   1 │   import * as fc from "fast-check";
+      2   2 │   import { describe, expect, it } from "vitest";
+      3     │ - import·{·fromFileUrl,·normalizeProjectEditor,·toFileUrl·}·from·"./projectPersistence";
+          3 │ + import·{·AudioRegion·}·from·"../project/domain/entities/AudioRegion";
+      4   4 │   import { ProjectEditorState } from "../project/domain/entities/ProjectState";
+      5     │ - import·{·AudioRegion·}·from·"../project/domain/entities/AudioRegion";
+          5 │ + import·{·fromFileUrl,·normalizeProjectEditor,·toFileUrl·}·from·"./projectPersistence";
+      6   6 │   
+      7   7 │   describe("Audio path handling", () => {
+  
+
+src\features\editor\audio.test.ts format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     63  63 │   			const result = normalizeProjectEditor({
+     64  64 │   				audioRegions: [
+     65     │ - → → → → → {·id:·"audio-1",·startMs:·0,·endMs:·1000,·audioPath:·"/test.mp3",·volume:·5·}·as·unknown·as·AudioRegion,
+         65 │ + → → → → → {
+         66 │ + → → → → → → id:·"audio-1",
+         67 │ + → → → → → → startMs:·0,
+         68 │ + → → → → → → endMs:·1000,
+         69 │ + → → → → → → audioPath:·"/test.mp3",
+         70 │ + → → → → → → volume:·5,
+         71 │ + → → → → → }·as·unknown·as·AudioRegion,
+     66  72 │   				],
+     67  73 │   			} as Partial<ProjectEditorState>);
+    ······· │ 
+     72  78 │   			const result = normalizeProjectEditor({
+     73  79 │   				audioRegions: [
+     74     │ - → → → → → {·id:·"audio-1",·startMs:·0,·endMs:·1000,·audioPath:·"/test.mp3",·volume:·-0.5·}·as·unknown·as·AudioRegion,
+         80 │ + → → → → → {
+         81 │ + → → → → → → id:·"audio-1",
+         82 │ + → → → → → → startMs:·0,
+         83 │ + → → → → → → endMs:·1000,
+         84 │ + → → → → → → audioPath:·"/test.mp3",
+         85 │ + → → → → → → volume:·-0.5,
+         86 │ + → → → → → }·as·unknown·as·AudioRegion,
+     75  87 │   				],
+     76  88 │   			} as Partial<ProjectEditorState>);
+    ······· │ 
+    193 205 │   	describe("empty or missing audioRegions", () => {
+    194 206 │   		it("should return empty array when audioRegions is undefined", () => {
+    195     │ - → → → const·result·=·normalizeProjectEditor({·audioRegions:·null·as·unknown·as·AudioRegion[]·}·as·Partial<ProjectEditorState>);
+        207 │ + → → → const·result·=·normalizeProjectEditor({
+        208 │ + → → → → audioRegions:·null·as·unknown·as·AudioRegion[],
+        209 │ + → → → }·as·Partial<ProjectEditorState>);
+    196 210 │   			expect(result.audioRegions).toEqual([]);
+    197 211 │   		});
+    198 212 │   
+    199 213 │   		it("should return empty array when audioRegions is not an array", () => {
+    200     │ - → → → const·result·=·normalizeProjectEditor({·audioRegions:·"invalid"·as·unknown·as·AudioRegion[]·}·as·Partial<ProjectEditorState>);
+        214 │ + → → → const·result·=·normalizeProjectEditor({
+        215 │ + → → → → audioRegions:·"invalid"·as·unknown·as·AudioRegion[],
+        216 │ + → → → }·as·Partial<ProjectEditorState>);
+    201 217 │   			expect(result.audioRegions).toEqual([]);
+    202 218 │   		});
+    203 219 │   
+    204 220 │   		it("should return empty array when audioRegions is null", () => {
+    205     │ - → → → const·result·=·normalizeProjectEditor({·audioRegions:·null·as·unknown·as·AudioRegion[]·}·as·Partial<ProjectEditorState>);
+        221 │ + → → → const·result·=·normalizeProjectEditor({
+        222 │ + → → → → audioRegions:·null·as·unknown·as·AudioRegion[],
+        223 │ + → → → }·as·Partial<ProjectEditorState>);
+    206 224 │   			expect(result.audioRegions).toEqual([]);
+    207 225 │   		});
+  
+
+src\features\editor\components\VideoEditor\SettingsPanel.tsx:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import { useMemo } from "react";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { type EditorEffectSection, type TimeSelection } from "./types";
+    3 │ import { AnnotationSettingsPanel } from "../panels/AnnotationSettingsPanel";
+  
+  i Safe fix: Organize Imports (Biome)
+  
+      1   1 │   import { useMemo } from "react";
+      2     │ - import·{·type·EditorEffectSection,·type·TimeSelection·}·from·"./types";
+          2 │ + import·{·type·ProjectEditorState·}·from·"@/features/project/domain/entities/ProjectState";
+      3   3 │   import { AnnotationSettingsPanel } from "../panels/AnnotationSettingsPanel";
+      4     │ - import·{·AudioSection·}·from·"./settings/AudioSection";
+      5     │ - import·{·CaptionSettingsPanel·}·from·"../panels/CaptionSettingsPanel";
+          4 │ + import·{·CaptionSettingsPanel·}·from·"../panels/CaptionSettingsPanel";
+          5 │ + import·{·AudioSection·}·from·"./settings/AudioSection";
+      6   6 │   import { CursorSection } from "./settings/CursorSection";
+      7   7 │   import { SceneSection } from "./settings/SceneSection";
+      8   8 │   import { WebcamSection } from "./settings/WebcamSection";
+      9     │ - 
+     10     │ - import·{·type·ProjectEditorState·}·from·"@/features/project/domain/entities/ProjectState";
+          9 │ + import·{·type·EditorEffectSection,·type·TimeSelection·}·from·"./types";
+     11  10 │   
+     12  11 │   export interface SettingsPanelProps extends Partial<ProjectEditorState> {
+  
+
+src\features\editor\components\VideoEditor\SettingsPanel.tsx:116:96 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    114 │ 				selectedAnnotation={selectedAnnotation}
+    115 │ 				onAnnotationContentChange={(id: string, content: string) => onAnnotationContentChange?.(id, content)}
+  > 116 │ 				onAnnotationTypeChange={(id: string, type: string) => onAnnotationTypeChange?.(id, type as any)}
+        │ 				                                                                                           ^^^
+    117 │ 				onAnnotationStyleChange={(id: string, style: object) => onAnnotationStyleChange?.(id, style as any)}
+    118 │ 				onAnnotationDelete={(id: string) => onAnnotationDelete?.(id)}
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\editor\components\VideoEditor\SettingsPanel.tsx:117:100 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    115 │ 				onAnnotationContentChange={(id: string, content: string) => onAnnotationContentChange?.(id, content)}
+    116 │ 				onAnnotationTypeChange={(id: string, type: string) => onAnnotationTypeChange?.(id, type as any)}
+  > 117 │ 				onAnnotationStyleChange={(id: string, style: object) => onAnnotationStyleChange?.(id, style as any)}
+        │ 				                                                                                               ^^^
+    118 │ 				onAnnotationDelete={(id: string) => onAnnotationDelete?.(id)}
+    119 │ 			/>
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\editor\components\VideoEditor\SettingsPanel.tsx format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+     25  25 │   	onAnnotationContentChange?: (id: string, content: string) => void;
+     26  26 │   	onAnnotationTypeChange?: (id: string, type: "text" | "image" | "figure" | "blur") => void;
+     27     │ - → onAnnotationStyleChange?:·(id:·string,·style:·Partial<import("@/features/project/domain/entities/AnnotationRegion").AnnotationTextStyle>)·=>·void;
+         27 │ + → onAnnotationStyleChange?:·(
+         28 │ + → → id:·string,
+         29 │ + → → style:·Partial<
+         30 │ + → → → import("@/features/project/domain/entities/AnnotationRegion").AnnotationTextStyle
+         31 │ + → → >,
+         32 │ + → )·=>·void;
+     28  33 │   	onAnnotationDelete?: (id: string) => void;
+     29  34 │   	onAutoCaptionSettingsChange?: (v: Partial<ProjectEditorState["autoCaptionSettings"]>) => void;
+    ······· │ 
+     63  68 │   	onShowCursorChange?: (v: boolean) => void;
+     64  69 │   	onLoopCursorChange?: (v: boolean) => void;
+     65     │ - → onCursorStyleChange?:·(v:·import("@/features/project/domain/entities/CursorSettings").CursorStyle)·=>·void;
+         70 │ + → onCursorStyleChange?:·(
+         71 │ + → → v:·import("@/features/project/domain/entities/CursorSettings").CursorStyle,
+         72 │ + → )·=>·void;
+     66  73 │   	onCursorSizeChange?: (v: number) => void;
+     67  74 │   	onCursorSmoothingChange?: (v: number) => void;
+    ······· │ 
+     71  78 │   	onCursorSwayChange?: (v: number) => void;
+     72  79 │   	onBorderRadiusChange?: (v: number) => void;
+     73     │ - → onWebcamChange?:·(v:·import("@/features/project/domain/entities/WebcamOverlay").WebcamOverlaySettings)·=>·void;
+         80 │ + → onWebcamChange?:·(
+         81 │ + → → v:·import("@/features/project/domain/entities/WebcamOverlay").WebcamOverlaySettings,
+         82 │ + → )·=>·void;
+     74  83 │   	onUploadWebcam?: () => void;
+     75  84 │   	onClearWebcam?: () => void;
+    ······· │ 
+     77  86 │   	onCropChange?: (v: import("@/features/project/domain/constants").CropRegion) => void;
+     78  87 │   	onAspectRatioChange?: (v: import("@/shared/lib/aspectRatio").AspectRatio) => void;
+     79     │ - → onAutoCaptionsChange?:·(v:·import("@/features/captions/domain/entities/CaptionCue").CaptionCue[])·=>·void;
+         88 │ + → onAutoCaptionsChange?:·(
+         89 │ + → → v:·import("@/features/captions/domain/entities/CaptionCue").CaptionCue[],
+         90 │ + → )·=>·void;
+     80  91 │   	selectedZoomDepth?: number | null;
+     81  92 │   	selectedSpeedValue?: number | null;
+    ······· │ 
+    104 115 │   
+    105 116 │   	const isBackgroundPanel = panelMode === "background";
+    106     │ - → const·selectedAnnotation·=·useMemo(()·=>·
+    107     │ - → → selectedAnnotationId·?·annotationRegions.find((a)·=>·a.id·===·selectedAnnotationId)·:·null
+    108     │ - → ,·[selectedAnnotationId,·annotationRegions]);
+        117 │ + → const·selectedAnnotation·=·useMemo(
+        118 │ + → → ()·=>
+        119 │ + → → → selectedAnnotationId·?·annotationRegions.find((a)·=>·a.id·===·selectedAnnotationId)·:·null,
+        120 │ + → → [selectedAnnotationId,·annotationRegions],
+        121 │ + → );
+    109 122 │   
+    110 123 │   	// Annotation Overlay Override
+    ······· │ 
+    113 126 │   			<AnnotationSettingsPanel
+    114 127 │   				selectedAnnotation={selectedAnnotation}
+    115     │ - → → → → onAnnotationContentChange={(id:·string,·content:·string)·=>·onAnnotationContentChange?.(id,·content)}
+    116     │ - → → → → onAnnotationTypeChange={(id:·string,·type:·string)·=>·onAnnotationTypeChange?.(id,·type·as·any)}
+    117     │ - → → → → onAnnotationStyleChange={(id:·string,·style:·object)·=>·onAnnotationStyleChange?.(id,·style·as·any)}
+        128 │ + → → → → onAnnotationContentChange={(id:·string,·content:·string)·=>
+        129 │ + → → → → → onAnnotationContentChange?.(id,·content)
+        130 │ + → → → → }
+        131 │ + → → → → onAnnotationTypeChange={(id:·string,·type:·string)·=>
+        132 │ + → → → → → onAnnotationTypeChange?.(id,·type·as·any)
+        133 │ + → → → → }
+        134 │ + → → → → onAnnotationStyleChange={(id:·string,·style:·object)·=>
+        135 │ + → → → → → onAnnotationStyleChange?.(id,·style·as·any)
+        136 │ + → → → → }
+    118 137 │   				onAnnotationDelete={(id: string) => onAnnotationDelete?.(id)}
+    119 138 │   			/>
+    ······· │ 
+    140 159 │   	return (
+    141 160 │   		<div className="flex flex-col h-full w-80 bg-[#161619] border-r border-white/5 overflow-y-auto custom-scrollbar">
+    142     │ - → → → <div·className="p-4·space-y-6">
+    143     │ - → → → → {renderSection()}
+    144     │ - → → → </div>
+        161 │ + → → → <div·className="p-4·space-y-6">{renderSection()}</div>
+    145 162 │   		</div>
+    146 163 │   	);
+  
+
+src\features\editor\components\VideoEditor\VideoPlayback.tsx:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import { forwardRef, useImperativeHandle } from "react";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { type VideoPlaybackRef, type AnnotationRegion, type WebcamOverlaySettings, type AutoCaptionSettings } from "./types";
+    3 │ import { AnnotationLayers } from "./videoPlayback/components/AnnotationLayers";
+  
+  i Safe fix: Organize Imports (Biome)
+  
+      1   1 │   import { forwardRef, useImperativeHandle } from "react";
+      2     │ - import·{·type·VideoPlaybackRef,·type·AnnotationRegion,·type·WebcamOverlaySettings,·type·AutoCaptionSettings·}·from·"./types";
+          2 │ + import·{·type·AnnotationRegion,·type·AutoCaptionSettings,·type·VideoPlaybackRef,·type·WebcamOverlaySettings·}·from·"./types";
+      3   3 │   import { AnnotationLayers } from "./videoPlayback/components/AnnotationLayers";
+      4   4 │   import { CaptionOverlay } from "./videoPlayback/components/CaptionOverlay";
+  
+
+src\features\editor\components\VideoEditor\VideoPlayback.tsx format ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+      1   1 │   import { forwardRef, useImperativeHandle } from "react";
+      2     │ - import·{·type·VideoPlaybackRef,·type·AnnotationRegion,·type·WebcamOverlaySettings,·type·AutoCaptionSettings·}·from·"./types";
+          2 │ + import·{
+          3 │ + → type·VideoPlaybackRef,
+          4 │ + → type·AnnotationRegion,
+          5 │ + → type·WebcamOverlaySettings,
+          6 │ + → type·AutoCaptionSettings,
+          7 │ + }·from·"./types";
+      3   8 │   import { AnnotationLayers } from "./videoPlayback/components/AnnotationLayers";
+      4   9 │   import { CaptionOverlay } from "./videoPlayback/components/CaptionOverlay";
+  
+
+src\features\editor\components\VideoEditor\components\CropModal.tsx format ━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Formatter would have printed the following content:
+  
+    22 22 │   						<p className="mt-2 text-sm text-slate-400">{t("settings.crop.instruction")}</p>
+    23 23 │   					</div>
+    24    │ - → → → → → <Button
+    25    │ - → → → → → → variant="ghost"
+    26    │ - → → → → → → onClick={onCancel}
+    27    │ - → → → → → → className="text-white·hover:bg-white/10"
+    28    │ - → → → → → >
+       24 │ + → → → → → <Button·variant="ghost"·onClick={onCancel}·className="text-white·hover:bg-white/10">
+    29 25 │   						Done
+    30 26 │   					</Button>
+  
+
+src\features\editor\components\VideoEditor\components\EditorRail.tsx:1:1 assist/source/organizeImports  FIXABLE  ━━━━━━━━━━
+
+  × The imports and exports are not sorted.
+  
+  > 1 │ import { motion, LayoutGroup, AnimatePresence } from "framer-motion";
+      │ ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
+    2 │ import { type LucideIcon } from "lucide-react";
+    3 │ 
+  
+  i Safe fix: Organize Imports (Biome)
+  
+     1    │ - import·{·motion,·LayoutGroup,·AnimatePresence·}·from·"framer-motion";
+        1 │ + import·{·AnimatePresence,·LayoutGroup,·motion·}·from·"framer-motion";
+     2  2 │   import { type LucideIcon } from "lucide-react";
+     3  3 │   
+  
+
+src\features\editor\components\VideoEditor\settings\CursorSection.tsx:3:51 lint/suspicious/noExplicitAny ━━━━━━━━━━
+
+  × Unexpected any. Specify a different type.
+  
+    1 │ import { CursorSettingsPanel } from "../../panels/CursorSettingsPanel";
+    2 │ 
+  > 3 │ export function CursorSection({ props }: { props: any }) {
+      │                                                   ^^^
+    4 │ 	const {
+    5 │ 		showCursor,
+  
+  i any disables many type checking rules. Its use should be avoided.
+  
+
+src\features\editor\components\VideoEditor\settings\CursorSection.tsx:30:53 lint/suspicious/noEmptyBlockStatements ━━━━━━━━━━
+
+  × Unexpected empty block.
+  
+    28 │ 		<CursorSettingsPanel
+    29 │ 			showCursor={showCursor}
+  > 30 │ 			onShowCursorChange={onShowCursorChange || (() => {})}
+       │ 			                                                 ^^
+    31 │ 			loopCursor={loopCursor}
+    32 │ 			onLoopCursorChange={onLoopCursorChange || (() => {})}
+  
+  i Empty blocks are usually the result of an incomplete refactoring. Remove the empty block or add a comment inside it if it is intentional.
+  
+
+src\features\editor\components\VideoEditor\settings\CursorSection.tsx:32:53 lint/suspicious/noEmptyBlockStatements ━━━━━━━━━━
+
+  × Unexpected empty block.
+  
+    30 │ 			onShowCursorChange={onShowCursorChange || (() => {})}
+    31 │ 			loopCursor={loopCursor}
+  > 32 │ 			onLoopCursorChange={onLoopCursorChange || (() => {})}
+       │ 			                                                 ^^
+    33 │ 			cursorStyle={cursorStyle}
+    34 │ 			onCursorStyleChange={onCursorStyleChange || (() => {})}
+  
+  i Empty blocks are usually the result of an incomplete refactoring. Remove the empty block or add a comment inside it if it is intentional.
+  
+
+src\features\editor\components\VideoEditor\settings\CursorSection.tsx:34:55 lint/suspicious/noEmptyBlockStatements ━━━━━━━━━━
+
+  × Unexpected empty block.
+  
+    32 │ 			onLoopCursorChange={onLoopCursorChange || (() => {})}
+    33 │ 			cursorStyle={cursorStyle}
+  > 34 │ 			onCursorStyleChange={onCursorStyleChange || (() => {})}
+       │ 			                                                   ^^
+    35 │ 			cursorSize={cursorSize}
+    36 │ 			onCursorSizeChange={onCursorSizeChange || (() => {})}
+  
+  i Empty blocks are usually the result of an incomplete refactoring. Remove the empty block or add a comment inside it if it is intentional.
+  
+
+The number of diagnostics exceeds the limit allowed. Use --max-diagnostics to increase it.
+Diagnostics not shown: 365.
+Checked 210 files in 450ms. No fixes applied.
+Found 364 errors.
+Found 21 warnings.
+check ━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━
+
+  × Some errors were emitted while running checks.
+  
+

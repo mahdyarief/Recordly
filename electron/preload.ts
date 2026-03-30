@@ -40,22 +40,23 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	openSourceSelector: () => {
 		return ipcRenderer.invoke("open-source-selector");
 	},
-	selectSource: (source: any) => {
+	selectSource: (source: ProcessedDesktopSource) => {
 		return ipcRenderer.invoke("select-source", source);
 	},
-	showSourceHighlight: (source: any) => {
+	showSourceHighlight: (source: ProcessedDesktopSource | null) => {
 		return ipcRenderer.invoke("show-source-highlight", source);
 	},
 	getSelectedSource: () => {
 		return ipcRenderer.invoke("get-selected-source");
 	},
-	onSelectedSourceChanged: (callback: (source: any) => void) => {
-		const listener = (_event: Electron.IpcRendererEvent, payload: any) => callback(payload);
+	onSelectedSourceChanged: (callback: (source: ProcessedDesktopSource | null) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, payload: ProcessedDesktopSource | null) =>
+			callback(payload);
 		ipcRenderer.on("selected-source-changed", listener);
 		return () => ipcRenderer.removeListener("selected-source-changed", listener);
 	},
 	startNativeScreenRecording: (
-		source: any,
+		source: ProcessedDesktopSource,
 		options?: {
 			capturesSystemAudio?: boolean;
 			capturesMicrophone?: boolean;
@@ -80,7 +81,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	resumeNativeScreenRecording: () => {
 		return ipcRenderer.invoke("resume-native-screen-recording");
 	},
-	startFfmpegRecording: (source: any) => {
+	startFfmpegRecording: (source: ProcessedDesktopSource) => {
 		return ipcRenderer.invoke("start-ffmpeg-recording", source);
 	},
 	stopFfmpegRecording: () => {
@@ -211,11 +212,21 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return () => ipcRenderer.removeListener("whisper-model-download-progress", listener);
 	},
 	onWhisperSmallModelDownloadProgress: (
-		callback: (state: { status: "idle" | "downloading" | "downloaded" | "error"; progress: number; path?: string | null; error?: string }) => void,
+		callback: (state: {
+			status: "idle" | "downloading" | "downloaded" | "error";
+			progress: number;
+			path?: string | null;
+			error?: string;
+		}) => void,
 	) => {
 		const listener = (
 			_event: Electron.IpcRendererEvent,
-			payload: { status: "idle" | "downloading" | "downloaded" | "error"; progress: number; path?: string | null; error?: string },
+			payload: {
+				status: "idle" | "downloading" | "downloaded" | "error";
+				progress: number;
+				path?: string | null;
+				error?: string;
+			},
 		) => callback(payload);
 		ipcRenderer.on("whisper-small-model-download-progress", listener);
 		return () => ipcRenderer.removeListener("whisper-small-model-download-progress", listener);
@@ -236,8 +247,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		ipcRenderer.on("auto-caption-progress", listener);
 		return () => ipcRenderer.removeListener("auto-caption-progress", listener);
 	},
-	onAutoCaptionChunk: (callback: (payload: { cues: any[] }) => void) => {
-		const listener = (_event: Electron.IpcRendererEvent, payload: { cues: any[] }) =>
+	onAutoCaptionChunk: (callback: (payload: { cues: AutoCaptionCue[] }) => void) => {
+		const listener = (_event: Electron.IpcRendererEvent, payload: { cues: AutoCaptionCue[] }) =>
 			callback(payload);
 		ipcRenderer.on("auto-caption-chunk", listener);
 		return () => ipcRenderer.removeListener("auto-caption-chunk", listener);
@@ -245,7 +256,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
 	setCurrentVideoPath: (path: string) => {
 		return ipcRenderer.invoke("set-current-video-path", path);
 	},
-	setCurrentRecordingSession: (session: { videoPath: string; webcamPath?: string | null; timeOffsetMs?: number }) => {
+	setCurrentRecordingSession: (session: {
+		videoPath: string;
+		webcamPath?: string | null;
+		timeOffsetMs?: number;
+	}) => {
 		return ipcRenderer.invoke("set-current-recording-session", session);
 	},
 	getCurrentRecordingSession: () => {
@@ -320,29 +335,29 @@ contextBridge.exposeInMainWorld("electronAPI", {
 		return ipcRenderer.invoke("check-for-app-updates");
 	},
 	onUpdateToastStateChanged: (
-		callback: (payload: {
-			version: string;
-			detail: string;
-			phase: "available" | "downloading" | "ready" | "error";
-			delayMs: number;
-			isPreview?: boolean;
-			progressPercent?: number;
-			primaryAction?: "download-update" | "install-update" | "retry-check";
-		} | null) => void,
+		callback: (
+			payload: {
+				version: string;
+				detail: string;
+				phase: "available" | "downloading" | "ready" | "error";
+				delayMs: number;
+				isPreview?: boolean;
+				progressPercent?: number;
+				primaryAction?: "download-update" | "install-update" | "retry-check";
+			} | null,
+		) => void,
 	) => {
 		const listener = (
 			_event: Electron.IpcRendererEvent,
-			payload:
-				| {
-						version: string;
-						detail: string;
-						phase: "available" | "downloading" | "ready" | "error";
-						delayMs: number;
-						isPreview?: boolean;
-						progressPercent?: number;
-						primaryAction?: "download-update" | "install-update" | "retry-check";
-				  }
-				| null,
+			payload: {
+				version: string;
+				detail: string;
+				phase: "available" | "downloading" | "ready" | "error";
+				delayMs: number;
+				isPreview?: boolean;
+				progressPercent?: number;
+				primaryAction?: "download-update" | "install-update" | "retry-check";
+			} | null,
 		) => callback(payload);
 		ipcRenderer.on("update-toast-state", listener);
 		return () => ipcRenderer.removeListener("update-toast-state", listener);

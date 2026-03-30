@@ -4,6 +4,23 @@
   "appId": "dev.recordly.app",
   "electronUpdaterCompatibility": ">=2.16",
   "asar": true,
+  "fileAssociations": [
+    {
+      "ext": "mp4",
+      "name": "MPEG-4 Movie",
+      "role": "Viewer"
+    },
+    {
+      "ext": "webm",
+      "name": "WebM Movie",
+      "role": "Viewer"
+    },
+    {
+      "ext": "recordly",
+      "name": "Recordly Project",
+      "role": "Editor"
+    }
+  ],
   "asarUnpack": [
     "node_modules/ffmpeg-static/**",
     "node_modules/uiohook-napi/**",

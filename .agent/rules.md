@@ -164,6 +164,15 @@ export class ElectronVideoRepository implements VideoRepository {
 | DTO | `PascalCase` + `Dto` | `ExportSettingsDto`, `VideoMetadataDto` |
 | Barrel/Index | `index.ts` | — |
 
+### 5.2 File Naming Rules
+- **One Primary Export Per File**: Each file should ideally have one primary export (class, function, or type).
+- **Match Export Name**: The file name **MUST exactly match** the name of the primary export (e.g., `class VideoExportService` in `VideoExportService.ts`, `function useAudioTrack` in `useAudioTrack.ts`).
+- **Forbidden Generic Names**: DO NOT use generic, "catch-all", or "bag-of-functions" names. Specifically:
+  - NO `Unified` suffixes/prefixes (e.g., `UnifiedManager.ts`).
+  - NO `Extend`, `Extension`, or `Misc` names (e.g., `ArrayExtend.ts`).
+  - NO `Common`, `Shared`, or `Base` as primary file names (unless it is a legitimate abstract base class).
+- **Specific over Generic**: Always prefer a specific domain-driven name over a generic architectural one.
+
 ---
 
 ## 6. General Code Quality Rules
@@ -227,9 +236,58 @@ export class ElectronVideoRepository implements VideoRepository {
 
 ---
 
-## 10. When in Doubt
+## 11. Documentation & Artifact Rules
+
+### 11.1 All Documentation Goes in `docs/`
+- Any plan, analysis, design note, ADR (Architecture Decision Record), or research output produced by the agent **MUST be saved as a `.md` file inside `d:\Github\Recordly\docs\`**.
+- Never save documentation to tmp directories, the Desktop, or any path outside the project workspace.
+
+### 11.2 File Naming
+- Use `kebab-case` for all doc filenames.
+- Names must be descriptive: `restructuring-plan.md`, `feature-recorder-design.md`, `adr-hexagonal-ports.md`.
+- Prefix Architecture Decision Records with `adr-`: `adr-001-feature-based-architecture.md`.
+
+### 11.3 Required Doc Categories
+
+| Type | Filename Pattern | Example |
+|---|---|---|
+| Restructuring / migration plan | `*-plan.md` | `restructuring-plan.md` |
+| Feature design | `feature-*-design.md` | `feature-recorder-design.md` |
+| Architecture Decision Record | `adr-NNN-*.md` | `adr-001-fba.md` |
+| Research / analysis | `*-analysis.md` or `*-research.md` | `ipc-performance-analysis.md` |
+| How-to / runbook | `howto-*.md` | `howto-add-feature.md` |
+
+### 11.4 Minimum Document Structure
+
+Every doc in `docs/` must include:
+```md
+# [Title]
+
+> **Status**: Draft | Proposed | Accepted | Superseded
+> **Date**: YYYY-MM-DD
+> **Author**: [agent or person]
+
+## Context
+[Why this document exists]
+
+## Decision / Plan
+[The content]
+
+## Consequences
+[What changes as a result]
+```
+
+### 11.5 Link Docs from `docs/README.md`
+- Every new doc added to `docs/` should be listed in `docs/README.md` with a one-line description.
+- If `docs/README.md` does not exist, create it when the first doc is written.
+
+---
+
+## 12. When in Doubt
 
 1. Ask: *Does this belong in the domain, service, or adapter layer?*
 2. Ask: *Would swapping the database/IPC/API break this file?* → If yes, it's an adapter.
 3. Ask: *Does this file know about React/Electron/the file system?* → If yes, it's not domain.
-4. Consult the relevant skill file under `.agent/skills/`.
+4. Ask: *Is this a deliverable document or plan?* → If yes, save it to `docs/`.
+5. Consult the relevant skill file under `.agent/skills/`.
+

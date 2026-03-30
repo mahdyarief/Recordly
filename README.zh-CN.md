@@ -188,21 +188,21 @@ PKGBUILD、桌面入口、发布同步，以及可选的**本地源码打包**�
 ```bash
 git clone https://github.com/webadderall/Recordly.git recordly
 cd recordly
-npm install
-npm run dev
+pnpm install
+pnpm dev
 ```
 
 如果需要打包构建：
 
 ```bash
-npm run build
+pnpm build
 ```
 
 也可以使用平台专用构建命令：
 
-- `npm run build:mac`
-- `npm run build:win`
-- `npm run build:linux`
+- `pnpm build:mac`
+- `pnpm build:win`
+- `pnpm build:linux`
 
 ---
 

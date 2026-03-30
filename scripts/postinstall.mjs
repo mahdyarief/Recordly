@@ -1,31 +1,29 @@
 import { spawnSync } from "node:child_process";
 
-const npmExecPath = process.env.npm_execpath;
-const hasNpmExecPath = typeof npmExecPath === "string" && npmExecPath.length > 0;
-const npmInvoker = hasNpmExecPath
+const pnpmExecPath = process.env.npm_execpath;
+const hasPnpmExecPath = typeof pnpmExecPath === "string" && pnpmExecPath.length > 0;
+const pnpmInvoker = hasPnpmExecPath
 	? {
 			command: process.execPath,
-			argsPrefix: [npmExecPath],
+			argsPrefix: [pnpmExecPath],
 			shell: false,
 		}
 	: {
-			command: process.platform === "win32" ? "npm.cmd" : "npm",
+			command: process.platform === "win32" ? "pnpm.cmd" : "pnpm",
 			argsPrefix: [],
 			shell: process.platform === "win32",
 		};
 
 function runScript(scriptName) {
-	console.log(`[postinstall] Running npm script: ${scriptName}`);
-	const result = spawnSync(npmInvoker.command, [...npmInvoker.argsPrefix, "run", scriptName], {
+	console.log(`[postinstall] Running pnpm script: ${scriptName}`);
+	const result = spawnSync(pnpmInvoker.command, [...pnpmInvoker.argsPrefix, "run", scriptName], {
 		stdio: "inherit",
 		env: process.env,
-		shell: npmInvoker.shell,
+		shell: pnpmInvoker.shell,
 	});
 
 	if (result.error) {
-		console.error(
-			`[postinstall] Failed to start "${scriptName}" (${result.error.message}).`,
-		);
+		console.error(`[postinstall] Failed to start "${scriptName}" (${result.error.message}).`);
 		return false;
 	}
 
@@ -35,9 +33,7 @@ function runScript(scriptName) {
 	}
 
 	if (result.status !== 0) {
-		console.error(
-			`[postinstall] "${scriptName}" exited with code ${result.status}.`,
-		);
+		console.error(`[postinstall] "${scriptName}" exited with code ${result.status}.`);
 		return false;
 	}
 

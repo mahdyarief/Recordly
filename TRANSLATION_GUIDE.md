@@ -41,7 +41,7 @@ English (`en`) is the source of truth for key structure.
 Run:
 
 ```bash
-npm run i18n:check
+pnpm i18n:check
 ```
 
 This checks for:
@@ -55,8 +55,8 @@ This checks for:
 1. Pull latest `main`.
 2. Update `en/<namespace>.json` with new keys if needed.
 3. Add matching keys to other locale files.
-4. Run `npm run i18n:check`.
-5. Run app locally (`npm run dev`) and spot-check UI text.
+4. Run `pnpm i18n:check`.
+5. Run app locally (`pnpm dev`) and spot-check UI text.
 6. Open PR with a short summary of changed namespaces.
 
 ## Scope Notes

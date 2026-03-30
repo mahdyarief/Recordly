@@ -1,5 +1,6 @@
 /// <reference types="vite-plugin-electron/electron-env" />
 
+// biome-ignore lint/style/noNamespace: standard NodeJS global augmentation
 declare namespace NodeJS {
 	interface ProcessEnv {
 		/**
@@ -74,19 +75,27 @@ interface Window {
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: () => Promise<void>;
 		openSourceSelector: () => Promise<void>;
-		selectSource: (source: any) => Promise<any>;
-		showSourceHighlight: (source: any) => Promise<{ success: boolean }>;
-		getSelectedSource: () => Promise<any>;
-		onSelectedSourceChanged: (callback: (source: any) => void) => () => void;
+		selectSource: (source: ProcessedDesktopSource) => Promise<void>;
+		showSourceHighlight: (source: ProcessedDesktopSource | null) => Promise<{ success: boolean }>;
+		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
+		onSelectedSourceChanged: (
+			callback: (source: ProcessedDesktopSource | null) => void,
+		) => () => void;
 		startNativeScreenRecording: (
-			source: any,
+			source: ProcessedDesktopSource,
 			options?: {
 				capturesSystemAudio?: boolean;
 				capturesMicrophone?: boolean;
 				microphoneDeviceId?: string;
 				microphoneLabel?: string;
 			},
-		) => Promise<{ success: boolean; path?: string; message?: string; error?: string; userNotified?: boolean }>;
+		) => Promise<{
+			success: boolean;
+			path?: string;
+			message?: string;
+			error?: string;
+			userNotified?: boolean;
+		}>;
 		stopNativeScreenRecording: () => Promise<{
 			success: boolean;
 			path?: string;
@@ -114,7 +123,7 @@ interface Window {
 			error?: string;
 		}>;
 		startFfmpegRecording: (
-			source: any,
+			source: ProcessedDesktopSource,
 		) => Promise<{ success: boolean; path?: string; message?: string; error?: string }>;
 		stopFfmpegRecording: () => Promise<{
 			success: boolean;
@@ -216,8 +225,12 @@ interface Window {
 				error?: string;
 			}) => void,
 		) => () => void;
-		getWhisperModelStatus: (modelName: string) => Promise<{ success: boolean; exists: boolean; path?: string | null; error?: string }>;
-		downloadWhisperModel: (modelName: string) => Promise<{ success: boolean; path?: string; alreadyDownloaded?: boolean; error?: string }>;
+		getWhisperModelStatus: (
+			modelName: string,
+		) => Promise<{ success: boolean; exists: boolean; path?: string | null; error?: string }>;
+		downloadWhisperModel: (
+			modelName: string,
+		) => Promise<{ success: boolean; path?: string; alreadyDownloaded?: boolean; error?: string }>;
 		deleteWhisperModel: (modelName: string) => Promise<{ success: boolean; error?: string }>;
 		onWhisperModelDownloadProgress: (
 			callback: (state: {
@@ -237,12 +250,12 @@ interface Window {
 			startTimeMs?: number;
 		}) => Promise<{
 			success: boolean;
-			cues?: any[];
+			cues?: AutoCaptionCue[];
 			message?: string;
 			error?: string;
 		}>;
 		onAutoCaptionProgress: (callback: (payload: { progress: number }) => void) => () => void;
-		onAutoCaptionChunk: (callback: (payload: { cues: any[] }) => void) => () => void;
+		onAutoCaptionChunk: (callback: (payload: { cues: AutoCaptionCue[] }) => void) => () => void;
 		setCurrentVideoPath: (path: string) => Promise<{ success: boolean }>;
 		setCurrentRecordingSession: (session: {
 			videoPath: string;
@@ -255,9 +268,7 @@ interface Window {
 		}>;
 		getCurrentVideoPath: () => Promise<{ success: boolean; path?: string }>;
 		clearCurrentVideoPath: () => Promise<{ success: boolean }>;
-		deleteRecordingFile: (
-			filePath: string,
-		) => Promise<{ success: boolean; error?: string }>;
+		deleteRecordingFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
 		saveProjectFile: (
 			projectData: unknown,
 			suggestedName?: string,
@@ -331,12 +342,14 @@ interface Window {
 		previewUpdateToast: () => Promise<{ success: boolean }>;
 		checkForAppUpdates: () => Promise<{ success: boolean; logPath: string }>;
 		onUpdateToastStateChanged: (callback: (payload: UpdateToastState | null) => void) => () => void;
-		onUpdateReadyToast: (callback: (payload: {
-			version: string;
-			detail: string;
-			delayMs: number;
-			isPreview?: boolean;
-		}) => void) => () => void;
+		onUpdateReadyToast: (
+			callback: (payload: {
+				version: string;
+				detail: string;
+				delayMs: number;
+				isPreview?: boolean;
+			}) => void,
+		) => () => void;
 		onMenuLoadProject: (callback: () => void) => () => void;
 		onMenuSaveProject: (callback: () => void) => () => void;
 		onMenuSaveProjectAs: (callback: () => void) => () => void;
@@ -387,9 +400,9 @@ interface Window {
 interface ProcessedDesktopSource {
 	id: string;
 	name: string;
-	display_id: string;
-	thumbnail: string | null;
-	appIcon: string | null;
+	display_id?: string;
+	thumbnail?: string | null;
+	appIcon?: string | null;
 	originalName?: string;
 	sourceType?: "screen" | "window";
 	appName?: string;
