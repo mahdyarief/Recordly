@@ -2839,7 +2839,11 @@ async function recoverNativeMacCaptureOutput() {
 
   try {
     if (systemAudioPath || microphonePath) {
-      await muxNativeMacRecordingWithAudio(candidatePath, systemAudioPath, microphonePath)
+      try {
+        await muxNativeMacRecordingWithAudio(candidatePath, systemAudioPath, microphonePath)
+      } catch (muxError) {
+        console.warn('Failed to mux audio during recovery:', muxError)
+      }
     }
 
     return await finalizeStoredVideo(candidatePath)
