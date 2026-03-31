@@ -45,6 +45,7 @@ import {
 	type SupportedMp4Dimensions,
 	VideoExporter,
 } from "@/lib/exporter";
+import { resolveMediaElementSource } from "@/lib/exporter/localMediaSource";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { resolveAutoCaptionSourcePath } from "./autoCaptionSource";
@@ -2679,13 +2680,31 @@ export default function VideoEditor() {
 
 	// Audio playback sync: manage Audio elements that play in sync with video
 	const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+	const audioElementRevokersRef = useRef<Map<string, () => void>>(new Map());
+	const audioElementResourcesRef = useRef<Map<string, string>>(new Map());
 
 	useEffect(() => {
+		let cancelled = false;
 		const existing = audioElementsRef.current;
 		const unused = new Set(existing.keys());
 
 		const hasAudioContext = !!(audioContextRef.current && masterGainRef.current && isAudioEngineReady);
 
+		const currentIds = new Set(audioRegions.map((r) => r.id));
+
+		// Remove old audio elements
+		for (const [id, audio] of existing) {
+			if (!currentIds.has(id)) {
+				audio.pause();
+				audio.src = "";
+				audioElementRevokersRef.current.get(id)?.();
+				audioElementRevokersRef.current.delete(id);
+				audioElementResourcesRef.current.delete(id);
+				existing.delete(id);
+			}
+		}
+
+		// Create/update audio elements
 		for (const region of audioRegions) {
 			unused.delete(region.id);
 			let audio = existing.get(region.id);
@@ -2695,10 +2714,32 @@ export default function VideoEditor() {
 				audio.crossOrigin = "anonymous";
 				existing.set(region.id, audio);
 			}
-			const expectedSrc = toFileUrl(region.audioPath);
-			if (audio.src !== expectedSrc) {
-				audio.src = expectedSrc;
+
+			if (audioElementResourcesRef.current.get(region.id) !== region.audioPath) {
+				audio.pause();
+				audio.src = "";
+				audioElementRevokersRef.current.get(region.id)?.();
+				audioElementRevokersRef.current.delete(region.id);
+				audioElementResourcesRef.current.set(region.id, region.audioPath);
+
+				void (async () => {
+					const resolved = await resolveMediaElementSource(region.audioPath);
+					const latestAudio = existing.get(region.id);
+
+					if (
+						cancelled ||
+						latestAudio !== audio ||
+						audioElementResourcesRef.current.get(region.id) !== region.audioPath
+					) {
+						resolved.revoke();
+						return;
+					}
+
+					audioElementRevokersRef.current.set(region.id, resolved.revoke);
+					latestAudio.src = resolved.src;
+				})();
 			}
+
 
 			// Route through Web Audio API if ready
 			if (hasAudioContext && !audioRegionNodesRef.current.has(region.id)) {
@@ -2749,6 +2790,22 @@ export default function VideoEditor() {
 					audioRegionNodesRef.current.delete(id);
 				}
 			}
+			cancelled = true;
+		};
+	}, [audioRegions, previewVolume]);
+
+	useEffect(() => {
+		return () => {
+			for (const audio of audioElementsRef.current.values()) {
+				audio.pause();
+				audio.src = "";
+			}
+			for (const revoke of audioElementRevokersRef.current.values()) {
+				revoke();
+			}
+			audioElementsRef.current.clear();
+			audioElementRevokersRef.current.clear();
+			audioElementResourcesRef.current.clear();
 		};
 	}, [audioRegions, previewVolume, masterAudioVolume, audioTrackVolume, isAudioEngineReady]);
 
