@@ -46,7 +46,6 @@ import {
 	VideoExporter,
 } from "@/lib/exporter";
 import { resolveMediaElementSource } from "@/lib/exporter/localMediaSource";
-import { clampMediaTimeToDuration } from "@/lib/mediaTiming";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { resolveAutoCaptionSourcePath } from "./autoCaptionSource";
