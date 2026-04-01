@@ -18,7 +18,7 @@ export class AudioProcessor {
    * 2) speed regions present -> pitch-preserving rendered timeline pipeline
    */
   async process(
-    demuxer: WebDemuxer,
+    demuxer: WebDemuxer | null,
     muxer: VideoMuxer,
     videoUrl: string,
     trimRegions?: TrimRegion[],
@@ -29,6 +29,7 @@ export class AudioProcessor {
     audioTrackVolume = 1,
     masterAudioMuted = false,
     masterAudioSoloed = false,
+    sourceAudioFallbackPaths?: string[],
   ): Promise<void> {
     const sortedTrims = trimRegions ? [...trimRegions].sort((a, b) => a.startMs - b.startMs) : []
     const sortedSpeedRegions = speedRegions
@@ -39,11 +40,15 @@ export class AudioProcessor {
     const sortedAudioRegions = audioRegions
       ? [...audioRegions].sort((a, b) => a.startMs - b.startMs)
       : []
+    const sortedSourceAudioFallbackPaths = sourceAudioFallbackPaths
+      ? sourceAudioFallbackPaths.filter((audioPath) => typeof audioPath === 'string' && audioPath.trim().length > 0)
+      : []
 
-    // When audio regions, speed edits, or global volume/mute settings are present, use AudioContext mixing path.
+    // When audio regions, speed edits, fallback paths, or global volume/mute settings are present, use AudioContext mixing path.
     if (
       sortedSpeedRegions.length > 0 ||
       sortedAudioRegions.length > 0 ||
+      sortedSourceAudioFallbackPaths.length > 0 ||
       masterAudioVolume !== 1 ||
       audioTrackVolume !== 1 ||
       masterAudioMuted ||
@@ -58,6 +63,7 @@ export class AudioProcessor {
         audioTrackVolume,
         masterAudioMuted,
         masterAudioSoloed,
+        sortedSourceAudioFallbackPaths,
       )
       if (!this.cancelled) {
         await this.muxRenderedAudioBlob(renderedAudioBlob, muxer)
@@ -66,6 +72,11 @@ export class AudioProcessor {
     }
 
     // No speed edits or audio regions: keep the original demux/decode/encode path with trim timestamp remap.
+    if (!demuxer) {
+      console.warn('[AudioProcessor] No demuxer available, skipping audio')
+      return
+    }
+
     await this.processTrimOnlyAudio(demuxer, muxer, sortedTrims, readEndSec)
   }
 
@@ -298,13 +309,15 @@ export class AudioProcessor {
     audioTrackVolume: number,
     masterAudioMuted: boolean,
     masterAudioSoloed: boolean,
+    sourceAudioFallbackPaths: string[] = [],
   ): Promise<Blob> {
-    const mediaSource = await resolveMediaElementSource(videoUrl)
-    const media = document.createElement('audio')
-    media.src = mediaSource.src
-    media.preload = 'auto'
+    const timelineMediaSource = await resolveMediaElementSource(videoUrl)
+    const timelineMedia = document.createElement('video')
+    timelineMedia.src = timelineMediaSource.src
+    timelineMedia.preload = 'auto'
+    timelineMedia.playsInline = true
 
-    const pitchMedia = media as HTMLMediaElement & {
+    const pitchMedia = timelineMedia as HTMLMediaElement & {
       preservesPitch?: boolean
       mozPreservesPitch?: boolean
       webkitPreservesPitch?: boolean
@@ -313,7 +326,7 @@ export class AudioProcessor {
     pitchMedia.mozPreservesPitch = true
     pitchMedia.webkitPreservesPitch = true
 
-    await this.waitForLoadedMetadata(media)
+    await this.waitForLoadedMetadata(timelineMedia)
     if (this.cancelled) {
       throw new Error('Export cancelled')
     }
@@ -321,11 +334,45 @@ export class AudioProcessor {
     const audioContext = new AudioContext()
     const destinationNode = audioContext.createMediaStreamDestination()
 
-    // Connect original video audio with its own gain node
-    const sourceNode = audioContext.createMediaElementSource(media)
+    // Create Gain node for the master audio track
     const masterGainNode = audioContext.createGain()
-    sourceNode.connect(masterGainNode)
     masterGainNode.connect(destinationNode)
+
+    let sourceNode: MediaElementAudioSourceNode | null = null
+    if (sourceAudioFallbackPaths.length === 0) {
+      sourceNode = audioContext.createMediaElementSource(timelineMedia)
+      sourceNode.connect(masterGainNode)
+    }
+
+    const sourceAudioElements: {
+      media: HTMLAudioElement
+      sourceNode: MediaElementAudioSourceNode
+      cleanup: () => void
+    }[] = []
+
+    for (const sourceAudioPath of sourceAudioFallbackPaths) {
+      const sourceFileSource = await resolveMediaElementSource(sourceAudioPath)
+      const audioEl = document.createElement('audio')
+      audioEl.src = sourceFileSource.src
+      audioEl.preload = 'auto'
+      try {
+        await this.waitForLoadedMetadata(audioEl)
+      } catch {
+        sourceFileSource.revoke()
+        console.warn('[AudioProcessor] Failed to load source audio fallback:', sourceAudioPath)
+        continue
+      }
+      if (this.cancelled) throw new Error('Export cancelled')
+
+      const fbSourceNode = audioContext.createMediaElementSource(audioEl)
+      fbSourceNode.connect(masterGainNode)
+
+      sourceAudioElements.push({
+        media: audioEl,
+        sourceNode: fbSourceNode,
+        cleanup: sourceFileSource.revoke,
+      })
+    }
 
     // Prepare external audio region elements
     const audioRegionElements: {
@@ -374,8 +421,8 @@ export class AudioProcessor {
         await audioContext.resume()
       }
 
-      await this.seekTo(media, 0)
-      await media.play()
+      await this.seekTo(timelineMedia, 0)
+      await timelineMedia.play()
 
       await new Promise<void>((resolve, reject) => {
         const cleanup = () => {
@@ -383,8 +430,8 @@ export class AudioProcessor {
             cancelAnimationFrame(rafId)
             rafId = null
           }
-          media.removeEventListener('error', onError)
-          media.removeEventListener('ended', onEnded)
+          timelineMedia.removeEventListener('error', onError)
+          timelineMedia.removeEventListener('ended', onEnded)
         }
 
         const onError = () => {
@@ -404,23 +451,54 @@ export class AudioProcessor {
             return
           }
 
-          const currentTimeMs = media.currentTime * 1000
+          let currentTimeMs = timelineMedia.currentTime * 1000
           const activeTrimRegion = this.findActiveTrimRegion(currentTimeMs, trimRegions)
 
-          if (activeTrimRegion && !media.paused && !media.ended) {
+          if (activeTrimRegion && !timelineMedia.paused && !timelineMedia.ended) {
             const skipToTime = activeTrimRegion.endMs / 1000
-            if (skipToTime >= media.duration) {
-              media.pause()
+            if (skipToTime >= timelineMedia.duration) {
+              timelineMedia.pause()
               cleanup()
               resolve()
               return
             }
-            media.currentTime = skipToTime
-          } else {
-            const activeSpeedRegion = this.findActiveSpeedRegion(currentTimeMs, speedRegions)
-            const playbackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1
-            if (Math.abs(media.playbackRate - playbackRate) > 0.0001) {
-              media.playbackRate = playbackRate
+            timelineMedia.currentTime = skipToTime
+            currentTimeMs = skipToTime * 1000
+          }
+
+          const activeSpeedRegion = this.findActiveSpeedRegion(currentTimeMs, speedRegions)
+          const playbackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1
+          if (Math.abs(timelineMedia.playbackRate - playbackRate) > 0.0001) {
+            timelineMedia.playbackRate = playbackRate
+          }
+
+          for (const entry of sourceAudioElements) {
+            const audioEl = entry.media
+            const targetTimeSec = Math.max(
+              0,
+              Math.min(
+                currentTimeMs / 1000,
+                Number.isFinite(audioEl.duration) ? audioEl.duration : currentTimeMs / 1000,
+              ),
+            )
+
+            if (Math.abs(audioEl.playbackRate - playbackRate) > 0.0001) {
+              audioEl.playbackRate = playbackRate
+            }
+
+            const atEnd = Number.isFinite(audioEl.duration) && targetTimeSec >= audioEl.duration
+            if (atEnd) {
+              if (!audioEl.paused) {
+                audioEl.pause()
+              }
+              continue
+            }
+
+            if (audioEl.paused) {
+              audioEl.currentTime = targetTimeSec
+              audioEl.play().catch(() => {})
+            } else if (Math.abs(audioEl.currentTime - targetTimeSec) > 0.3) {
+              audioEl.currentTime = targetTimeSec
             }
           }
 
@@ -478,7 +556,7 @@ export class AudioProcessor {
             }
           }
 
-          if (!media.paused && !media.ended) {
+          if (!timelineMedia.paused && !timelineMedia.ended) {
             rafId = requestAnimationFrame(tick)
           } else {
             cleanup()
@@ -486,15 +564,23 @@ export class AudioProcessor {
           }
         }
 
-        media.addEventListener('error', onError, { once: true })
-        media.addEventListener('ended', onEnded, { once: true })
+        timelineMedia.addEventListener('error', onError, { once: true })
+        timelineMedia.addEventListener('ended', onEnded, { once: true })
         rafId = requestAnimationFrame(tick)
       })
     } finally {
       if (rafId !== null) {
         cancelAnimationFrame(rafId)
       }
-      media.pause()
+      timelineMedia.pause()
+      timelineMediaSource.revoke()
+      for (const entry of sourceAudioElements) {
+        entry.media.pause()
+        entry.sourceNode.disconnect()
+        entry.media.src = ''
+        entry.media.load()
+        entry.cleanup()
+      }
       for (const entry of audioRegionElements) {
         entry.media.pause()
         entry.sourceNode.disconnect()
@@ -507,12 +593,9 @@ export class AudioProcessor {
         recorder.stop()
       }
       destinationNode.stream.getTracks().forEach((track) => track.stop())
-      sourceNode.disconnect()
+      masterGainNode.disconnect()
       destinationNode.disconnect()
       await audioContext.close()
-      media.src = ''
-      media.load()
-      mediaSource.revoke()
     }
 
     const recordedBlob = await recordedBlobPromise

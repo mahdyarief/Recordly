@@ -46,6 +46,7 @@ import {
 	VideoExporter,
 } from "@/lib/exporter";
 import { resolveMediaElementSource } from "@/lib/exporter/localMediaSource";
+import { clampMediaTimeToDuration } from "@/lib/mediaTiming";
 import { matchesShortcut } from "@/lib/shortcuts";
 import { type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { resolveAutoCaptionSourcePath } from "./autoCaptionSource";
@@ -416,6 +417,7 @@ export default function VideoEditor() {
 	const [audioTrackVolume, setAudioTrackVolume] = useState(1);
 	const [isMasterSelected, setIsMasterSelected] = useState(false);
 	const [previewVolume, setPreviewVolume] = useState(1);
+	const [sourceAudioFallbackPaths, setSourceAudioFallbackPaths] = useState<string[]>([]);
 	const [aspectRatio, setAspectRatio] = useState<AspectRatio>(initialEditorPreferences.aspectRatio);
 	const [activeEffectSection, setActiveEffectSection] = useState<EditorEffectSection>("scene");
 	const [exportQuality, setExportQuality] = useState<ExportQuality>(
@@ -895,6 +897,36 @@ export default function VideoEditor() {
 		() => videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null),
 		[videoPath, videoSourcePath],
 	);
+	const hasSourceAudioFallback = sourceAudioFallbackPaths.length > 0;
+
+	useEffect(() => {
+		let cancelled = false;
+		setSourceAudioFallbackPaths([]);
+
+		if (!currentSourcePath) {
+			return () => {
+				cancelled = true;
+			};
+		}
+
+		void (async () => {
+			try {
+				const result = await window.electronAPI.getVideoAudioFallbackPaths(currentSourcePath);
+				if (cancelled) {
+					return;
+				}
+				setSourceAudioFallbackPaths(result.success ? (result.paths ?? []) : []);
+			} catch {
+				if (!cancelled) {
+					setSourceAudioFallbackPaths([]);
+				}
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [currentSourcePath]);
 
 	const projectDisplayName = useMemo(() => {
 		const fileName =
@@ -2682,6 +2714,10 @@ export default function VideoEditor() {
 	const audioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
 	const audioElementRevokersRef = useRef<Map<string, () => void>>(new Map());
 	const audioElementResourcesRef = useRef<Map<string, string>>(new Map());
+	const sourceAudioElementsRef = useRef<Map<string, HTMLAudioElement>>(new Map());
+	const sourceAudioElementRevokersRef = useRef<Map<string, () => void>>(new Map());
+	const sourceAudioElementResourcesRef = useRef<Map<string, string>>(new Map());
+	const lastSourceAudioSyncTimeRef = useRef<number | null>(null);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -2795,6 +2831,67 @@ export default function VideoEditor() {
 	}, [audioRegions, previewVolume]);
 
 	useEffect(() => {
+		let cancelled = false;
+		const existing = sourceAudioElementsRef.current;
+		const currentIds = new Set(sourceAudioFallbackPaths);
+
+		for (const [id, audio] of existing) {
+			if (!currentIds.has(id)) {
+				audio.pause();
+				audio.src = "";
+				sourceAudioElementRevokersRef.current.get(id)?.();
+				sourceAudioElementRevokersRef.current.delete(id);
+				sourceAudioElementResourcesRef.current.delete(id);
+				existing.delete(id);
+			}
+		}
+
+		for (const audioPath of sourceAudioFallbackPaths) {
+			let audio = existing.get(audioPath);
+			if (!audio) {
+				audio = new Audio();
+				audio.preload = "auto";
+				existing.set(audioPath, audio);
+			}
+
+			if (sourceAudioElementResourcesRef.current.get(audioPath) !== audioPath) {
+				audio.pause();
+				audio.src = "";
+				sourceAudioElementRevokersRef.current.get(audioPath)?.();
+				sourceAudioElementRevokersRef.current.delete(audioPath);
+				sourceAudioElementResourcesRef.current.set(audioPath, audioPath);
+
+				void (async () => {
+					const resolved = await resolveMediaElementSource(audioPath);
+					const latestAudio = existing.get(audioPath);
+
+					if (
+						cancelled ||
+						latestAudio !== audio ||
+						sourceAudioElementResourcesRef.current.get(audioPath) !== audioPath
+					) {
+						resolved.revoke();
+						return;
+					}
+
+					sourceAudioElementRevokersRef.current.set(audioPath, resolved.revoke);
+					latestAudio.src = resolved.src;
+				})();
+			}
+
+			audio.volume = Math.max(0, Math.min(1, previewVolume));
+		}
+
+		if (sourceAudioFallbackPaths.length === 0) {
+			lastSourceAudioSyncTimeRef.current = null;
+		}
+
+		return () => {
+			cancelled = true;
+		};
+	}, [previewVolume, sourceAudioFallbackPaths]);
+
+	useEffect(() => {
 		return () => {
 			for (const audio of audioElementsRef.current.values()) {
 				audio.pause();
@@ -2806,6 +2903,17 @@ export default function VideoEditor() {
 			audioElementsRef.current.clear();
 			audioElementRevokersRef.current.clear();
 			audioElementResourcesRef.current.clear();
+			for (const audio of sourceAudioElementsRef.current.values()) {
+				audio.pause();
+				audio.src = "";
+			}
+			for (const revoke of sourceAudioElementRevokersRef.current.values()) {
+				revoke();
+			}
+			sourceAudioElementsRef.current.clear();
+			sourceAudioElementRevokersRef.current.clear();
+			sourceAudioElementResourcesRef.current.clear();
+			lastSourceAudioSyncTimeRef.current = null;
 		};
 	}, [audioRegions, previewVolume, masterAudioVolume, audioTrackVolume, isAudioEngineReady]);
 
@@ -2863,7 +2971,7 @@ export default function VideoEditor() {
 				}
 			}
 		}
-	}, [isPlaying, currentTime, audioRegions, previewVolume, masterAudioVolume, audioTrackVolume]);
+	}, [isPlaying, currentTime, audioRegions]);
 
 	const showExportSuccessToast = useCallback((filePath: string) => {
 		toast.success(`Exported successfully to ${filePath}`, {
@@ -3073,10 +3181,6 @@ export default function VideoEditor() {
 						cursorClickBounceDuration,
 						cursorSway,
 						audioRegions,
-						masterAudioVolume: masterAudioVolume ?? 1,
-						audioTrackVolume: audioTrackVolume ?? 1,
-						masterAudioMuted: masterAudioMuted ?? false,
-						masterAudioSoloed: masterAudioSoloed ?? false,
 						previewWidth,
 						previewHeight,
 						onProgress: (progress: ExportProgress) => {
@@ -3743,7 +3847,7 @@ export default function VideoEditor() {
 												cursorClickBounce={cursorClickBounce}
 												cursorClickBounceDuration={cursorClickBounceDuration}
 												cursorSway={cursorSway}
-												timeSelection={timeSelection}
+												volume={previewVolume}
 											/>
 
 										</div>
