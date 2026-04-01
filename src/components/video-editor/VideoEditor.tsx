@@ -897,7 +897,6 @@ export default function VideoEditor() {
 		() => videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null),
 		[videoPath, videoSourcePath],
 	);
-	const hasSourceAudioFallback = sourceAudioFallbackPaths.length > 0;
 
 	useEffect(() => {
 		let cancelled = false;
@@ -3181,6 +3180,11 @@ export default function VideoEditor() {
 						cursorClickBounceDuration,
 						cursorSway,
 						audioRegions,
+						masterAudioVolume,
+						audioTrackVolume,
+						masterAudioMuted,
+						masterAudioSoloed,
+						sourceAudioFallbackPaths,
 						previewWidth,
 						previewHeight,
 						onProgress: (progress: ExportProgress) => {
@@ -3847,7 +3851,6 @@ export default function VideoEditor() {
 												cursorClickBounce={cursorClickBounce}
 												cursorClickBounceDuration={cursorClickBounceDuration}
 												cursorSway={cursorSway}
-												volume={previewVolume}
 											/>
 
 										</div>

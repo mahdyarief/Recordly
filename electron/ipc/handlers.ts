@@ -51,7 +51,6 @@ const WHISPER_MODELS: Record<string, { filename: string; url: string }> = {
   },
 }
 
-const WHISPER_SMALL_MODEL_PATH = path.join(WHISPER_MODEL_DIR, 'ggml-small.bin')
 const COMPANION_AUDIO_LAYOUTS = [
   { platform: 'mac' as const, systemSuffix: '.system.m4a', micSuffix: '.mic.m4a' },
   { platform: 'win' as const, systemSuffix: '.system.wav', micSuffix: '.mic.wav' },
