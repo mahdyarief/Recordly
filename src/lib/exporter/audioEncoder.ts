@@ -593,9 +593,13 @@ export class AudioProcessor {
         recorder.stop()
       }
       destinationNode.stream.getTracks().forEach((track) => track.stop())
+      sourceNode?.disconnect()
       masterGainNode.disconnect()
       destinationNode.disconnect()
       await audioContext.close()
+      timelineMedia.src = ''
+      timelineMedia.load()
+      timelineMediaSource.revoke()
     }
 
     const recordedBlob = await recordedBlobPromise
