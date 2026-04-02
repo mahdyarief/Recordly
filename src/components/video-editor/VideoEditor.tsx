@@ -46,6 +46,8 @@ import {
 	VideoExporter,
 } from "@/lib/exporter";
 import { resolveMediaElementSource } from "@/lib/exporter/localMediaSource";
+import { clampMediaTimeToDuration } from "@/lib/mediaTiming";
+
 import { matchesShortcut } from "@/lib/shortcuts";
 import { type AspectRatio, getAspectRatioValue } from "@/utils/aspectRatioUtils";
 import { resolveAutoCaptionSourcePath } from "./autoCaptionSource";
@@ -896,6 +898,36 @@ export default function VideoEditor() {
 		() => videoSourcePath ?? (videoPath ? fromFileUrl(videoPath) : null),
 		[videoPath, videoSourcePath],
 	);
+	const hasSourceAudioFallback = sourceAudioFallbackPaths.length > 0;
+
+	useEffect(() => {
+		let cancelled = false;
+		setSourceAudioFallbackPaths([]);
+
+		if (!currentSourcePath) {
+			return () => {
+				cancelled = true;
+			};
+		}
+
+		void (async () => {
+			try {
+				const result = await window.electronAPI.getVideoAudioFallbackPaths(currentSourcePath);
+				if (cancelled) {
+					return;
+				}
+				setSourceAudioFallbackPaths(result.success ? (result.paths ?? []) : []);
+			} catch {
+				if (!cancelled) {
+					setSourceAudioFallbackPaths([]);
+				}
+			}
+		})();
+
+		return () => {
+			cancelled = true;
+		};
+	}, [currentSourcePath]);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -2774,7 +2806,6 @@ export default function VideoEditor() {
 				})();
 			}
 
-
 			// Route through Web Audio API if ready
 			if (hasAudioContext && !audioRegionNodesRef.current.has(region.id)) {
 				try {
@@ -2824,6 +2855,7 @@ export default function VideoEditor() {
 					audioRegionNodesRef.current.delete(id);
 				}
 			}
+
 			cancelled = true;
 		};
 	}, [audioRegions, previewVolume]);
@@ -2915,6 +2947,7 @@ export default function VideoEditor() {
 		};
 	}, [audioRegions, previewVolume, masterAudioVolume, audioTrackVolume, isAudioEngineReady]);
 
+
 	// Sync audio playback with video currentTime and isPlaying state
 	useEffect(() => {
 		for (const region of audioRegions) {
@@ -2970,6 +3003,50 @@ export default function VideoEditor() {
 			}
 		}
 	}, [isPlaying, currentTime, audioRegions]);
+
+	useEffect(() => {
+		if (sourceAudioFallbackPaths.length === 0) {
+			lastSourceAudioSyncTimeRef.current = null;
+			return;
+		}
+
+		const activeSpeedRegion = speedRegions.find(
+			(region) => currentTime * 1000 >= region.startMs && currentTime * 1000 < region.endMs,
+		);
+		const targetPlaybackRate = activeSpeedRegion ? activeSpeedRegion.speed : 1;
+		const previousTimelineTime = lastSourceAudioSyncTimeRef.current;
+		const timelineJumped =
+			previousTimelineTime === null || Math.abs(currentTime - previousTimelineTime) > 0.25;
+		const driftThreshold = isPlaying ? 0.35 : 0.01;
+
+		for (const audio of sourceAudioElementsRef.current.values()) {
+			const targetTime = clampMediaTimeToDuration(
+				currentTime,
+				Number.isFinite(audio.duration) ? audio.duration : null,
+			);
+
+			if (Math.abs(audio.playbackRate - targetPlaybackRate) > 0.001) {
+				audio.playbackRate = targetPlaybackRate;
+			}
+
+			if (timelineJumped || Math.abs(audio.currentTime - targetTime) > driftThreshold) {
+				try {
+					audio.currentTime = targetTime;
+				} catch {
+					// no-op
+				}
+			}
+
+			const atEnd = Number.isFinite(audio.duration) && targetTime >= audio.duration;
+			if (isPlaying && !atEnd) {
+				audio.play().catch(() => undefined);
+			} else if (!audio.paused) {
+				audio.pause();
+			}
+		}
+
+		lastSourceAudioSyncTimeRef.current = currentTime;
+	}, [currentTime, isPlaying, sourceAudioFallbackPaths, speedRegions]);
 
 	const showExportSuccessToast = useCallback((filePath: string) => {
 		toast.success(`Exported successfully to ${filePath}`, {
@@ -3183,6 +3260,7 @@ export default function VideoEditor() {
 						audioTrackVolume,
 						masterAudioMuted,
 						masterAudioSoloed,
+
 						sourceAudioFallbackPaths,
 						previewWidth,
 						previewHeight,
@@ -3794,6 +3872,9 @@ export default function VideoEditor() {
 											<VideoPlayback
 												key={`${videoPath || "no-video"}:${previewVersion}`}
 												volume={(() => {
+													if (hasSourceAudioFallback) {
+														return 0;
+													}
 													const hasGlobalSolo = masterAudioSoloed || audioRegions.some((r) => r.soloed);
 													if (masterAudioMuted || (hasGlobalSolo && !masterAudioSoloed)) {
 														return 0;

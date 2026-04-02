@@ -217,6 +217,7 @@ export class VideoExporter {
 							this.config.audioTrackVolume,
 							this.config.masterAudioMuted,
 							this.config.masterAudioSoloed,
+
 							this.config.sourceAudioFallbackPaths,
 						),
 						"audio processing",

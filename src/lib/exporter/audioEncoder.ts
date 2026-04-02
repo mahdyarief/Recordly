@@ -29,6 +29,7 @@ export class AudioProcessor {
     audioTrackVolume = 1,
     masterAudioMuted = false,
     masterAudioSoloed = false,
+
     sourceAudioFallbackPaths?: string[],
   ): Promise<void> {
     const sortedTrims = trimRegions ? [...trimRegions].sort((a, b) => a.startMs - b.startMs) : []
@@ -53,6 +54,7 @@ export class AudioProcessor {
       audioTrackVolume !== 1 ||
       masterAudioMuted ||
       masterAudioSoloed
+
     ) {
       const renderedAudioBlob = await this.renderMixedTimelineAudio(
         videoUrl,
@@ -63,6 +65,7 @@ export class AudioProcessor {
         audioTrackVolume,
         masterAudioMuted,
         masterAudioSoloed,
+
         sortedSourceAudioFallbackPaths,
       )
       if (!this.cancelled) {
@@ -309,6 +312,7 @@ export class AudioProcessor {
     audioTrackVolume: number,
     masterAudioMuted: boolean,
     masterAudioSoloed: boolean,
+
     sourceAudioFallbackPaths: string[] = [],
   ): Promise<Blob> {
     const timelineMediaSource = await resolveMediaElementSource(videoUrl)
@@ -573,6 +577,8 @@ export class AudioProcessor {
         cancelAnimationFrame(rafId)
       }
       timelineMedia.pause()
+      sourceNode?.disconnect()
+
       timelineMediaSource.revoke()
       for (const entry of sourceAudioElements) {
         entry.media.pause()
@@ -595,6 +601,7 @@ export class AudioProcessor {
       destinationNode.stream.getTracks().forEach((track) => track.stop())
       sourceNode?.disconnect()
       masterGainNode.disconnect()
+
       destinationNode.disconnect()
       await audioContext.close()
       timelineMedia.src = ''
