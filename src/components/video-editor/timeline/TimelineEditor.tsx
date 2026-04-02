@@ -25,7 +25,6 @@ import Item from "./Item";
 import KeyframeMarkers from "./KeyframeMarkers";
 import type { Range, Span } from "dnd-timeline";
 import type { ZoomRegion, TrimRegion, AnnotationRegion, SpeedRegion, AudioRegion, CursorTelemetryPoint, ZoomFocus, CaptionCue, TimeSelection } from "../types";
-import { toFileUrl } from "../projectPersistence";
 
 import { detectInteractionCandidates, normalizeCursorTelemetry } from "./zoomSuggestionUtils";
 
