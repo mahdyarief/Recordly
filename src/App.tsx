@@ -1,5 +1,7 @@
 import { useEffect, useState } from "react";
 import { CountdownOverlay } from "./components/countdown/CountdownOverlay";
+import { AreaHighlight } from "./components/launch/AreaHighlight";
+import { AreaSelector } from "./components/launch/AreaSelector";
 import { LaunchWindow } from "./components/launch/LaunchWindow";
 import { SourceSelector } from "./components/launch/SourceSelector";
 import { UpdateToastWindow } from "./components/launch/UpdateToastWindow";
@@ -23,6 +25,8 @@ export default function App() {
 		if (
 			type === "hud-overlay" ||
 			type === "source-selector" ||
+			type === "area-selector" ||
+			type === "area-highlight" ||
 			type === "countdown" ||
 			(type === "update-toast" && isMacOS)
 		) {
@@ -49,16 +53,20 @@ export default function App() {
 
 	switch (windowType) {
 		case "hud-overlay":
-				return (
-					<>
-						<LaunchWindow />
-						<Toaster theme="dark" className="pointer-events-auto" />
-					</>
-				);
+			return (
+				<>
+					<LaunchWindow />
+					<Toaster theme="dark" className="pointer-events-auto" />
+				</>
+			);
 		case "source-selector":
 			return <SourceSelector />;
 		case "countdown":
 			return <CountdownOverlay />;
+		case "area-selector":
+			return <AreaSelector />;
+		case "area-highlight":
+			return <AreaHighlight />;
 		case "update-toast":
 			return <UpdateToastWindow />;
 		case "editor":

@@ -8,8 +8,8 @@ import {
 	dialog,
 	ipcMain,
 	Menu,
-	nativeImage,
 	Notification,
+	nativeImage,
 	session,
 	systemPreferences,
 	Tray,
@@ -21,26 +21,27 @@ import {
 	killWindowsCaptureProcess,
 	registerIpcHandlers,
 } from "./ipc/handlers";
+import type { UpdateToastPayload } from "./updater";
 import {
 	checkForAppUpdates,
+	deferUpdateReminder,
 	dismissUpdateToast,
 	downloadAvailableUpdate,
-	deferUpdateReminder,
 	getCurrentUpdateToastPayload,
 	getUpdaterLogPath,
 	getUpdateStatusSummary,
 	installDownloadedUpdateNow,
 	previewUpdateToast,
-	skipAvailableUpdateVersion,
 	setupAutoUpdates,
+	skipAvailableUpdateVersion,
 } from "./updater";
-import type { UpdateToastPayload } from "./updater";
 import {
+	createAreaSelectorWindow,
 	createEditorWindow,
 	createHudOverlayWindow,
 	createSourceSelectorWindow,
-	getUpdateToastWindow,
 	getHudOverlayWindow,
+	getUpdateToastWindow,
 	hideUpdateToastWindow,
 	showUpdateToastWindow,
 } from "./windows";
@@ -408,7 +409,9 @@ function sendUpdateToastToWindows(channel: "update-toast-state", payload: unknow
 			return false;
 		}
 
-		const notificationKey = [updatePayload.phase, updatePayload.version, updatePayload.detail].join(":");
+		const notificationKey = [updatePayload.phase, updatePayload.version, updatePayload.detail].join(
+			":",
+		);
 		if (activeUpdateNotificationKey === notificationKey) {
 			return true;
 		}
@@ -619,12 +622,18 @@ function createEditorWindowWrapper() {
 	});
 }
 
+function createAreaSelectorWindowWrapper(options?: { displayId?: string }) {
+	const win = createAreaSelectorWindow(options);
+	return win;
+}
+
 function createSourceSelectorWindowWrapper() {
-	sourceSelectorWindow = createSourceSelectorWindow();
-	sourceSelectorWindow.on("closed", () => {
+	const win = createSourceSelectorWindow();
+	sourceSelectorWindow = win;
+	win.on("closed", () => {
 		sourceSelectorWindow = null;
 	});
-	return sourceSelectorWindow;
+	return win;
 }
 
 // On macOS, applications and their menu bar stay active until the user quits
@@ -682,10 +691,14 @@ app.whenReady().then(async () => {
 		const cameraStatus = systemPreferences.getMediaAccessStatus("camera");
 		const micStatus = systemPreferences.getMediaAccessStatus("microphone");
 		if (cameraStatus !== "granted") {
-			console.warn(`[permissions] Camera access is "${cameraStatus}" — webcam may not work. Check Windows Settings > Privacy > Camera.`);
+			console.warn(
+				`[permissions] Camera access is "${cameraStatus}" — webcam may not work. Check Windows Settings > Privacy > Camera.`,
+			);
 		}
 		if (micStatus !== "granted") {
-			console.warn(`[permissions] Microphone access is "${micStatus}" — mic recording may not work. Check Windows Settings > Privacy > Microphone.`);
+			console.warn(
+				`[permissions] Microphone access is "${micStatus}" — mic recording may not work. Check Windows Settings > Privacy > Microphone.`,
+			);
 		}
 	}
 
@@ -702,6 +715,7 @@ app.whenReady().then(async () => {
 	registerIpcHandlers(
 		createEditorWindowWrapper,
 		createSourceSelectorWindowWrapper,
+		createAreaSelectorWindowWrapper,
 		() => mainWindow,
 		() => sourceSelectorWindow,
 		(recording: boolean, sourceName: string) => {

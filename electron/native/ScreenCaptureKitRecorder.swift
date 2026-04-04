@@ -14,6 +14,10 @@ struct CaptureConfig: Codable {
 	let microphoneDeviceId: String?
 	let microphoneLabel: String?
 	let microphoneOutputPath: String?
+	let cropX: Double?
+	let cropY: Double?
+	let cropWidth: Double?
+	let cropHeight: Double?
 }
 
 let targetCaptureFPS = 60
@@ -97,8 +101,8 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 		}
 
 		let filter: SCContentFilter
-		let outputWidth: Int
-		let outputHeight: Int
+		var outputWidth: Int
+		var outputHeight: Int
 
 		if let windowId = config.windowId {
 			trackedWindowId = windowId
@@ -129,8 +133,31 @@ final class ScreenCaptureRecorder: NSObject, SCStreamOutput, SCStreamDelegate {
 			let scaleFactor = ScreenCaptureRecorder.scaleFactor(for: display.displayID)
 			outputWidth = max(2, Int(displayBounds.width) * scaleFactor)
 			outputHeight = max(2, Int(displayBounds.height) * scaleFactor)
-			streamConfig.width = outputWidth
-			streamConfig.height = outputHeight
+
+			if let cx = config.cropX, let cy = config.cropY, let cw = config.cropWidth, let ch = config.cropHeight, cw > 0, ch > 0 {
+				let localX = CGFloat(cx) - displayBounds.origin.x
+				let cropHeight = CGFloat(ch)
+				// ScreenCaptureKit uses bottom-left origin for sourceRect, but coordinates from Electron are top-left.
+				// localY must be flipped relative to the display height.
+				let localY = displayBounds.height - (CGFloat(cy) - displayBounds.origin.y) - cropHeight
+				let cropRect = CGRect(x: localX, y: localY, width: CGFloat(cw), height: cropHeight)
+				streamConfig.sourceRect = cropRect
+				
+				// Adjust output dimensions to match the crop area (scaled)
+				// Ensure dimensions are even for H.264 encoding compatibility
+				var w = max(2, Int(CGFloat(cw) * CGFloat(scaleFactor)))
+				var h = max(2, Int(CGFloat(ch) * CGFloat(scaleFactor)))
+				if w % 2 != 0 { w -= 1 }
+				if h % 2 != 0 { h -= 1 }
+				
+				outputWidth = w
+				outputHeight = h
+				streamConfig.width = outputWidth
+				streamConfig.height = outputHeight
+			} else {
+				streamConfig.width = outputWidth
+				streamConfig.height = outputHeight
+			}
 		}
 
 		let destinationURL: URL

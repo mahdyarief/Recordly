@@ -76,9 +76,28 @@ interface Window {
 		getSources: (opts: Electron.SourcesOptions) => Promise<ProcessedDesktopSource[]>;
 		switchToEditor: () => Promise<void>;
 		openSourceSelector: () => Promise<void>;
+		openAreaSelector: (options?: { displayId?: string }) => Promise<void>;
+		cancelAreaSelector: () => Promise<void>;
 		selectSource: (source: any) => Promise<any>;
 		showSourceHighlight: (source: any) => Promise<{ success: boolean }>;
 		getSelectedSource: () => Promise<any>;
+		setSelectedArea: (area: {
+			x: number;
+			y: number;
+			width: number;
+			height: number;
+		}) => Promise<{ success: boolean; message?: string; error?: string }>;
+		getSelectedArea: () => Promise<{ x: number; y: number; width: number; height: number } | null>;
+		onAreaHighlightData: (
+			callback: (data: {
+				x: number;
+				y: number;
+				width: number;
+				height: number;
+				winX: number;
+				winY: number;
+			}) => void,
+		) => () => void;
 		onSelectedSourceChanged: (callback: (source: any) => void) => () => void;
 		startNativeScreenRecording: (
 			source: any,
@@ -88,7 +107,13 @@ interface Window {
 				microphoneDeviceId?: string;
 				microphoneLabel?: string;
 			},
-		) => Promise<{ success: boolean; path?: string; message?: string; error?: string; userNotified?: boolean }>;
+		) => Promise<{
+			success: boolean;
+			path?: string;
+			message?: string;
+			error?: string;
+			userNotified?: boolean;
+		}>;
 		stopNativeScreenRecording: () => Promise<{
 			success: boolean;
 			path?: string;
@@ -244,9 +269,7 @@ interface Window {
 		}>;
 		getCurrentVideoPath: () => Promise<{ success: boolean; path?: string }>;
 		clearCurrentVideoPath: () => Promise<{ success: boolean }>;
-		deleteRecordingFile: (
-			filePath: string,
-		) => Promise<{ success: boolean; error?: string }>;
+		deleteRecordingFile: (filePath: string) => Promise<{ success: boolean; error?: string }>;
 		saveProjectFile: (
 			projectData: unknown,
 			suggestedName?: string,
@@ -320,12 +343,14 @@ interface Window {
 		previewUpdateToast: () => Promise<{ success: boolean }>;
 		checkForAppUpdates: () => Promise<{ success: boolean; logPath: string }>;
 		onUpdateToastStateChanged: (callback: (payload: UpdateToastState | null) => void) => () => void;
-		onUpdateReadyToast: (callback: (payload: {
-			version: string;
-			detail: string;
-			delayMs: number;
-			isPreview?: boolean;
-		}) => void) => () => void;
+		onUpdateReadyToast: (
+			callback: (payload: {
+				version: string;
+				detail: string;
+				delayMs: number;
+				isPreview?: boolean;
+			}) => void,
+		) => () => void;
 		onMenuLoadProject: (callback: () => void) => () => void;
 		onMenuSaveProject: (callback: () => void) => () => void;
 		onMenuSaveProjectAs: (callback: () => void) => () => void;
@@ -353,7 +378,9 @@ interface Window {
 		setHasUnsavedChanges: (hasChanges: boolean) => void;
 		onRequestSaveBeforeClose: (callback: () => Promise<boolean>) => () => void;
 		isNativeWindowsCaptureAvailable: () => Promise<{ available: boolean }>;
-		muxNativeWindowsRecording: (pauseSegments?: Array<{ startMs: number; endMs: number }>) => Promise<{
+		muxNativeWindowsRecording: (
+			pauseSegments?: Array<{ startMs: number; endMs: number }>,
+		) => Promise<{
 			success: boolean;
 			path?: string;
 			message?: string;
@@ -364,8 +391,17 @@ interface Window {
 		/** Hide the OS cursor before browser capture starts. */
 		hideOsCursor: () => Promise<{ success: boolean }>;
 		/** Recording preferences (mic, system audio) */
-		getRecordingPreferences: () => Promise<{ success: boolean; microphoneEnabled: boolean; microphoneDeviceId?: string; systemAudioEnabled: boolean }>;
-		setRecordingPreferences: (prefs: { microphoneEnabled?: boolean; microphoneDeviceId?: string; systemAudioEnabled?: boolean }) => Promise<{ success: boolean; error?: string }>;
+		getRecordingPreferences: () => Promise<{
+			success: boolean;
+			microphoneEnabled: boolean;
+			microphoneDeviceId?: string;
+			systemAudioEnabled: boolean;
+		}>;
+		setRecordingPreferences: (prefs: {
+			microphoneEnabled?: boolean;
+			microphoneDeviceId?: string;
+			systemAudioEnabled?: boolean;
+		}) => Promise<{ success: boolean; error?: string }>;
 		/** Countdown timer before recording */
 		getCountdownDelay: () => Promise<{ success: boolean; delay: number }>;
 		setCountdownDelay: (delay: number) => Promise<{ success: boolean; error?: string }>;

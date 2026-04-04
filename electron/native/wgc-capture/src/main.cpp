@@ -19,8 +19,10 @@ static std::atomic<bool> g_stopRequested{false};
 static std::atomic<bool> g_pauseRequested{false};
 static std::atomic<bool> g_resumePending{false};
 static std::atomic<int64_t> g_lastFrameTimestampHns{0};
+static std::atomic<int64_t> g_firstFrameTimestampHns{-1};
 static std::atomic<int64_t> g_pauseStartTimestampHns{0};
 static std::atomic<int64_t> g_accumulatedPausedHns{0};
+static std::chrono::steady_clock::time_point g_captureStartTime;
 static std::mutex g_stopMutex;
 static std::condition_variable g_stopCv;
 
@@ -41,6 +43,10 @@ struct CaptureConfig {
     bool hasDisplayBounds = false;
     bool captureSystemAudio = false;
     bool captureMic = false;
+    int cropX = -1;
+    int cropY = -1;
+    int cropW = -1;
+    int cropH = -1;
 };
 
 static bool parseSimpleJson(const std::string& json, CaptureConfig& config) {
@@ -145,6 +151,16 @@ static bool parseSimpleJson(const std::string& json, CaptureConfig& config) {
         config.hasDisplayBounds = true;
     }
 
+    config.cropX = findInt("cropX");
+    config.cropY = findInt("cropY");
+    
+    // Accept both short and long names for crop width/height for robustness.
+    config.cropW = findInt("cropW");
+    if (config.cropW < 0) config.cropW = findInt("cropWidth");
+    
+    config.cropH = findInt("cropH");
+    if (config.cropH < 0) config.cropH = findInt("cropHeight");
+
     return true;
 }
 
@@ -196,6 +212,10 @@ int main(int argc, char* argv[]) {
 
     winrt::init_apartment(winrt::apartment_type::multi_threaded);
 
+    // Set DPI awareness to match Electron's logical units as closely as possible for coordinate matching.
+    // DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2 is supported on Win10 1703 and later.
+    SetProcessDpiAwarenessContext(DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2);
+
     CaptureConfig config;
     if (!parseSimpleJson(argv[1], config)) {
         std::cerr << "ERROR: Failed to parse config JSON" << std::endl;
@@ -216,14 +236,18 @@ int main(int argc, char* argv[]) {
         }
     } else {
         HMONITOR monitor = findMonitorByDisplayId(config.displayId);
-        if (!monitor && config.hasDisplayBounds) {
-            std::cerr << "Monitor ID match failed, attempting coordinate-based match: "
+        if (monitor) {
+            std::cerr << "Found monitor by displayId: " << config.displayId << " handle: " << monitor << std::endl;
+        } else if (config.hasDisplayBounds) {
+            std::cerr << "Monitor ID match failed for " << config.displayId << ", attempting coordinate-based match: "
                       << config.displayX << "," << config.displayY << " " << config.displayW << "x" << config.displayH << std::endl;
             monitor = findMonitorByBounds(config.displayX, config.displayY, config.displayW, config.displayH);
         }
 
         if (!monitor) {
             std::cerr << "ERROR: Could not find monitor for displayId " << config.displayId << std::endl;
+            // List available monitors for diagnostics
+            enumerateMonitors(); // The callback will print them if updated, but for now we error out.
             return 1;
         }
         if (!session.initialize(monitor, config.fps)) {
@@ -232,12 +256,42 @@ int main(int argc, char* argv[]) {
         }
     }
 
-    int captureWidth = config.width > 0 ? config.width : session.captureWidth();
-    int captureHeight = config.height > 0 ? config.height : session.captureHeight();
+    const int monitorWidth = session.captureWidth();
+    const int monitorHeight = session.captureHeight();
+    int captureWidth = config.width > 0 ? config.width : monitorWidth;
+    int captureHeight = config.height > 0 ? config.height : monitorHeight;
 
-    // Ensure even dimensions for H.264
-    captureWidth = (captureWidth / 2) * 2;
-    captureHeight = (captureHeight / 2) * 2;
+    // Validate and scale crop to even dimensions for H.264
+    bool isValidCrop = false;
+    if (config.cropW > 0 && config.cropH > 0) {
+        // Ensure even dimensions
+        int evenCropW = (config.cropW / 2) * 2;
+        int evenCropH = (config.cropH / 2) * 2;
+        int startX = config.cropX >= 0 ? config.cropX : 0;
+        int startY = config.cropY >= 0 ? config.cropY : 0;
+
+        if (evenCropW > 0 && evenCropH > 0 &&
+            startX >= 0 && startY >= 0 &&
+            startX + evenCropW <= monitorWidth &&
+            startY + evenCropH <= monitorHeight) {
+            
+            captureWidth = evenCropW;
+            captureHeight = evenCropH;
+            isValidCrop = true;
+        } else {
+            std::cerr << "WARNING: Invalid crop rectangle (" << startX << "," << startY << " " << evenCropW << "x" << evenCropH 
+                      << ") for monitor " << monitorWidth << "x" << monitorHeight << ". Falling back to full monitor." << std::endl;
+        }
+    }
+
+    if (!isValidCrop) {
+        captureWidth = (monitorWidth / 2) * 2;
+        captureHeight = (monitorHeight / 2) * 2;
+    }
+
+    // Set up crop texture IF we are cropping OR if the monitor itself has odd dimensions
+    const bool needsCropping = isValidCrop || 
+                               (monitorWidth != captureWidth || monitorHeight != captureHeight);
 
     // Initialize encoder
     MFEncoder encoder;
@@ -251,13 +305,39 @@ int main(int argc, char* argv[]) {
     // Set up frame callback
     std::atomic<int64_t> frameCount{0};
     std::atomic<bool> recordingStartedAnnounced{false};
+
+    ComPtr<ID3D11Texture2D> cropTexture;
+    if (needsCropping) {
+        D3D11_TEXTURE2D_DESC desc = {};
+        desc.Width = captureWidth;
+        desc.Height = captureHeight;
+        desc.MipLevels = 1;
+        desc.ArraySize = 1;
+        desc.Format = DXGI_FORMAT_B8G8R8A8_UNORM;
+        desc.SampleDesc.Count = 1;
+        desc.Usage = D3D11_USAGE_DEFAULT;
+        desc.BindFlags = D3D11_BIND_RENDER_TARGET | D3D11_BIND_SHADER_RESOURCE;
+        
+        HRESULT hr = session.device()->CreateTexture2D(&desc, nullptr, cropTexture.GetAddressOf());
+        if (FAILED(hr)) {
+            std::cerr << "ERROR: Failed to create crop texture (HRESULT 0x" << std::hex << hr << ")" << std::endl;
+            return 1;
+        }
+    }
+
+    // Set up frame callback
     session.setFrameCallback([&](ID3D11Texture2D* texture, int64_t timestampHns) {
         g_lastFrameTimestampHns = timestampHns;
         if (g_stopRequested) return;
 
         if (g_pauseRequested) return;
 
-        int64_t adjustedTimestampHns = timestampHns;
+        if (g_firstFrameTimestampHns.load() == -1) {
+            g_firstFrameTimestampHns.store(timestampHns);
+            g_captureStartTime = std::chrono::steady_clock::now();
+        }
+
+        int64_t adjustedTimestampHns = timestampHns - g_firstFrameTimestampHns.load();
         if (g_resumePending.exchange(false)) {
             const int64_t pauseStart = g_pauseStartTimestampHns.load();
             if (pauseStart > 0 && timestampHns > pauseStart) {
@@ -270,11 +350,39 @@ int main(int argc, char* argv[]) {
             adjustedTimestampHns = 0;
         }
 
-        if (encoder.writeFrame(texture, adjustedTimestampHns)) {
+        ID3D11Texture2D* inputTexture = texture;
+        if (cropTexture) {
+            D3D11_BOX box = {};
+            int left = 0;
+            int top = 0;
+
+            if (isValidCrop) {
+                left = config.cropX >= 0 ? config.cropX : 0;
+                top = config.cropY >= 0 ? config.cropY : 0;
+            }
+            // else: full monitor fallback uses 0,0 (already set)
+
+            box.left = left;
+            box.top = top;
+            box.front = 0;
+            box.right = left + captureWidth;
+            box.bottom = top + captureHeight;
+            box.back = 1;
+
+            session.context()->CopySubresourceRegion(cropTexture.Get(), 0, 0, 0, 0, texture, 0, &box);
+            inputTexture = cropTexture.Get();
+        }
+
+        if (encoder.writeFrame(inputTexture, adjustedTimestampHns)) {
             const int64_t writtenFrames = frameCount.fetch_add(1) + 1;
             if (writtenFrames == 1 && !recordingStartedAnnounced.exchange(true)) {
                 std::cout << "Recording started" << std::endl;
                 std::cout.flush();
+            }
+        } else {
+            static int errorCount = 0;
+            if (errorCount++ < 5) {
+                std::cerr << "ERROR: Failed to write frame to encoder" << std::endl;
             }
         }
     });
@@ -343,6 +451,19 @@ int main(int argc, char* argv[]) {
         return 1;
     }
 
+    if (g_firstFrameTimestampHns.load() != -1) {
+        auto stopTime = std::chrono::steady_clock::now();
+        int64_t finalElapsedHns = std::chrono::duration_cast<std::chrono::duration<int64_t, std::ratio<1, 10000000>>>(stopTime - g_captureStartTime).count();
+        finalElapsedHns -= g_accumulatedPausedHns.load();
+        
+        int64_t adjustedLastElapsedHns = (g_lastFrameTimestampHns.load() - g_firstFrameTimestampHns.load()) - g_accumulatedPausedHns.load();
+        if (!g_pauseRequested.load() && finalElapsedHns > adjustedLastElapsedHns) {
+            encoder.writeFrame(nullptr, finalElapsedHns);
+        }
+    }
+
+    encoder.markEndOfStream();
+
     if (!encoder.finalize()) {
         std::cerr << "ERROR: Failed to finalize Media Foundation encoder" << std::endl;
         return 1;
@@ -357,8 +478,9 @@ int main(int argc, char* argv[]) {
     }
     std::cout.flush();
 
-    // Allow pipe buffers to drain before forceful exit
-    Sleep(100);
+    // Allow pipe buffers to drain before forceful exit.
+    // 250ms is more robust for flushing MP4 headers on high-res monitors.
+    Sleep(250);
 
     // Fast exit to avoid WinRT/COM teardown crashes during apartment cleanup
     ExitProcess(0);
