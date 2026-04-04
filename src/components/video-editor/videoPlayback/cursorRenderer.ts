@@ -438,9 +438,6 @@ function getCursorPackStyleAsset(style: CursorPackStyle, key: CursorAssetKey) {
 	if (!styleAssets) {
 		if (!warnedMissingCursorPackStyles.has(style)) {
 			warnedMissingCursorPackStyles.add(style);
-			console.warn(
-				`[CursorRenderer] Missing cursor pack assets for ${style}; falling back to Tahoe cursors.`,
-			);
 		}
 		return getStatefulCursorAsset("tahoe", key);
 	}
@@ -470,8 +467,8 @@ export async function preloadCursorAssets() {
 				if (result.success && result.cursors) {
 					systemCursors = result.cursors;
 				}
-			} catch (error) {
-				console.warn("[CursorRenderer] Failed to fetch system cursor assets:", error);
+			} catch {
+				// Failed to fetch system cursor assets
 			}
 
 			const entries = await Promise.all(
@@ -483,7 +480,6 @@ export async function preloadCursorAssets() {
 						: (uploadedAsset?.url ?? systemAsset?.dataUrl);
 
 					if (!assetUrl) {
-						console.warn(`[CursorRenderer] No cursor image for: ${key}`);
 						return null;
 					}
 
@@ -535,8 +531,7 @@ export async function preloadCursorAssets() {
 								anchorY: normalizedAnchor.y,
 							} satisfies LoadedCursorAsset,
 						] as const;
-					} catch (error) {
-						console.warn(`[CursorRenderer] Failed to load cursor image for: ${key}`, error);
+					} catch {
 						return null;
 					}
 				}),
@@ -575,11 +570,7 @@ export async function preloadCursorAssets() {
 								createCursorPackAsset(source.pointerUrl, source.pointerAnchor),
 							]);
 							return [style, { default: defaultAsset, pointer: pointerAsset }] as const;
-						} catch (error) {
-							console.warn(
-								`[CursorRenderer] Failed to load cursor pack style for: ${style}`,
-								error,
-							);
+						} catch {
 							return null;
 						}
 					},

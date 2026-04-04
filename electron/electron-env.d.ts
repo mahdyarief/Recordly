@@ -78,9 +78,9 @@ interface Window {
 		openSourceSelector: () => Promise<void>;
 		openAreaSelector: (options?: { displayId?: string }) => Promise<void>;
 		cancelAreaSelector: () => Promise<void>;
-		selectSource: (source: any) => Promise<any>;
-		showSourceHighlight: (source: any) => Promise<{ success: boolean }>;
-		getSelectedSource: () => Promise<any>;
+		selectSource: (source: ProcessedDesktopSource) => Promise<any>;
+		showSourceHighlight: (source: ProcessedDesktopSource) => Promise<{ success: boolean }>;
+		getSelectedSource: () => Promise<ProcessedDesktopSource | null>;
 		setSelectedArea: (area: {
 			x: number;
 			y: number;
@@ -98,9 +98,9 @@ interface Window {
 				winY: number;
 			}) => void,
 		) => () => void;
-		onSelectedSourceChanged: (callback: (source: any) => void) => () => void;
+		onSelectedSourceChanged: (callback: (source: ProcessedDesktopSource | null) => void) => () => void;
 		startNativeScreenRecording: (
-			source: any,
+			source: ProcessedDesktopSource,
 			options?: {
 				capturesSystemAudio?: boolean;
 				capturesMicrophone?: boolean;
@@ -141,7 +141,7 @@ interface Window {
 			error?: string;
 		}>;
 		startFfmpegRecording: (
-			source: any,
+			source: ProcessedDesktopSource,
 		) => Promise<{ success: boolean; path?: string; message?: string; error?: string }>;
 		stopFfmpegRecording: () => Promise<{
 			success: boolean;
@@ -422,6 +422,8 @@ interface ProcessedDesktopSource {
 	sourceType?: "screen" | "window";
 	appName?: string;
 	windowTitle?: string;
+	scaleFactor?: number;
+	displayBounds?: { x: number; y: number; width: number; height: number };
 }
 
 interface CursorTelemetryPoint {

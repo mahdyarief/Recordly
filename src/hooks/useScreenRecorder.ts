@@ -19,7 +19,6 @@ const DEFAULT_WIDTH = 1920;
 const DEFAULT_HEIGHT = 1080;
 const CODEC_ALIGNMENT = 2;
 const RECORDER_TIMESLICE_MS = 1000;
-const BITS_PER_MEGABIT = 1_000_000;
 const MIN_FRAME_RATE = 30;
 const CHROME_MEDIA_SOURCE = "desktop";
 const RECORDING_FILE_PREFIX = "recording-";
@@ -102,7 +101,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 	const pauseStartedAtMs = useRef<number | null>(null);
 	const pauseSegmentsRef = useRef<PauseSegment[]>([]);
 
-	const logNativeCaptureDiagnostics = useCallback(async (context: string) => {
+	const logNativeCaptureDiagnostics = useCallback(async (_context: string) => {
 		if (typeof window.electronAPI?.getLastNativeCaptureDiagnostics !== "function") {
 			return;
 		}
@@ -110,15 +109,15 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		try {
 			const result = await window.electronAPI.getLastNativeCaptureDiagnostics();
 			if (result.success && result.diagnostics) {
-				console.warn(`[NativeCaptureDiagnostics:${context}]`, result.diagnostics);
+				// Native capture diagnostics available for debugging if needed
 			}
-		} catch (error) {
-			console.warn("Failed to load native capture diagnostics:", error);
+		} catch {
+			// Failed to load native capture diagnostics
 		}
 	}, []);
 
 	const buildNativeCaptureFailureMessage = useCallback(
-		async (context: string, fallbackMessage: string) => {
+		async (_context: string, fallbackMessage: string) => {
 			if (typeof window.electronAPI?.getLastNativeCaptureDiagnostics !== "function") {
 				return fallbackMessage;
 			}
@@ -130,8 +129,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					return fallbackMessage;
 				}
 
-				console.warn(`[NativeCaptureDiagnostics:${context}]`, diagnostics);
-
+				// Diagnostics data is used to build the failure message details below
 				const details: string[] = [];
 				if (diagnostics.error) {
 					details.push(diagnostics.error);
@@ -141,8 +139,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				}
 
 				return details.length > 0 ? `${fallbackMessage} ${details.join(". ")}` : fallbackMessage;
-			} catch (error) {
-				console.warn("Failed to load native capture diagnostics:", error);
+			} catch {
 				return fallbackMessage;
 			}
 		},
@@ -276,7 +273,9 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 		}
 
 		if (mixingContext.current) {
-			mixingContext.current.close().catch(() => {});
+			mixingContext.current.close().catch(() => {
+				// Context close failure is non-fatal during cleanup
+			});
 			mixingContext.current = null;
 		}
 	}, []);
@@ -302,7 +301,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			try {
 				await video.play();
 			} catch (error) {
-				console.error("Failed to start video playback for cropping:", error);
 				video.srcObject = null;
 				throw error;
 			}
@@ -382,8 +380,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					display_id: displayMatch.display_id ?? source.display_id,
 				};
 			}
-		} catch (error) {
-			console.warn("Failed to resolve browser capture source:", error);
+		} catch {
+			// Failed to resolve browser capture source
 		}
 
 		return source;
@@ -401,13 +399,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				} else {
 					await window.electronAPI.setCurrentVideoPath(videoPath);
 				}
-			} catch (error) {
-				console.error("Failed to persist recording session metadata:", error);
-
+			} catch {
 				try {
 					await window.electronAPI.setCurrentVideoPath(videoPath);
-				} catch (fallbackError) {
-					console.error("Failed to persist fallback video path:", fallbackError);
+				} catch {
+					// Fallback failed
 				}
 			}
 
@@ -549,7 +545,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				webcamStream.current = null;
 			}
 		}
-	}, [getRecordingDurationMs, webcamDeviceId, webcamEnabled]);
+	}, [getRecordingDurationMs, webcamDeviceId, webcamEnabled, selectMimeType]);
 
 	/** Start the prepared webcam MediaRecorder. Call after main recording begins. */
 	const beginWebcamCapture = useCallback(() => {
@@ -577,15 +573,14 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				await window.electronAPI?.setRecordingState(false);
 
 				if (!result.success || !result.path) {
-					console.error("Failed to stop native screen recording:", result.error ?? result.message);
 					void logNativeCaptureDiagnostics("stop-native-screen-recording");
 					try {
 						const recoveredPath = await recoverNativeRecordingSession();
 						if (recoveredPath) {
 							return;
 						}
-					} catch (recoveryError) {
-						console.error("Failed to recover native screen recording:", recoveryError);
+					} catch {
+						// Failed to recover native screen recording
 					}
 
 					const failureMessage = await buildNativeCaptureFailureMessage(
@@ -710,11 +705,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							if (recoveredPath) {
 								return;
 							}
-						} catch (recoveryError) {
-							console.error(
-								"Failed to recover interrupted native screen recording:",
-								recoveryError,
-							);
+						} catch {
+							// Failed to recover interrupted native screen recording
 						}
 					}
 
@@ -723,7 +715,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						alert(state.message);
 						await window.electronAPI.openSourceSelector();
 					} else {
-						console.error(state.message);
 						toast.error(state.message);
 					}
 				})();
@@ -829,10 +820,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 				});
 				if (!nativeResult.success) {
 					if (useNativeWindowsCapture) {
-						console.warn(
-							"Native Windows capture failed, falling back to browser capture:",
-							nativeResult.error ?? nativeResult.message,
-						);
+						// Native Windows capture failed, falling back to browser capture
 						void logNativeCaptureDiagnostics("start-native-screen-recording");
 						if (!hasShownNativeWindowsFallbackToast.current) {
 							hasShownNativeWindowsFallbackToast.current = true;
@@ -882,7 +870,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			try {
 				await window.electronAPI.hideOsCursor?.();
 			} catch {
-				console.warn("Could not hide OS cursor before recording.");
+				// Could not hide OS cursor
 			}
 
 			let videoTrack: MediaStreamTrack | undefined;
@@ -914,8 +902,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							},
 							video: browserScreenVideoConstraints,
 						});
-					} catch (audioError) {
-						console.warn("System audio capture failed, falling back to video-only:", audioError);
+					} catch {
+						// System audio capture failed, falling back to video-only
 						alert(
 							"System audio is not available for this source. Recording will continue without system audio.",
 						);
@@ -958,8 +946,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 									},
 							video: false,
 						});
-					} catch (audioError) {
-						console.warn("Failed to get microphone access:", audioError);
+					} catch {
+						// Failed to get microphone access
 						alert(
 							"Microphone access was denied. Recording will continue without microphone audio.",
 						);
@@ -1040,18 +1028,11 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 					width: { ideal: TARGET_WIDTH, max: TARGET_WIDTH },
 					height: { ideal: TARGET_HEIGHT, max: TARGET_HEIGHT },
 				} as MediaTrackConstraints);
-			} catch (error) {
-				console.warn(
-					"Unable to lock 4K/60fps constraints, using best available track settings.",
-					error,
-				);
+			} catch {
+				// Unable to lock high-end constraints, using best available
 			}
 
-			let {
-				width = DEFAULT_WIDTH,
-				height = DEFAULT_HEIGHT,
-				frameRate = TARGET_FRAME_RATE,
-			} = videoTrack.getSettings();
+			let { width = DEFAULT_WIDTH, height = DEFAULT_HEIGHT } = videoTrack.getSettings();
 
 			width = Math.floor(width / CODEC_ALIGNMENT) * CODEC_ALIGNMENT;
 			height = Math.floor(height / CODEC_ALIGNMENT) * CODEC_ALIGNMENT;
@@ -1059,12 +1040,7 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			const videoBitsPerSecond = computeBitrate(width, height);
 			const mimeType = selectMimeType();
 
-			console.log(
-				`Recording at ${width}x${height} @ ${frameRate ?? TARGET_FRAME_RATE}fps using ${mimeType} / ${Math.round(
-					videoBitsPerSecond / BITS_PER_MEGABIT,
-				)} Mbps`,
-			);
-
+			// Initializing MediaRecorder for session
 			chunks.current = [];
 			const hasAudio = stream.current.getAudioTracks().length > 0;
 			const recorder = new MediaRecorder(stream.current, {
@@ -1098,7 +1074,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 						videoFileName,
 					);
 					if (!videoResult.success) {
-						console.error("Failed to store video:", videoResult.message);
 						return;
 					}
 
@@ -1108,8 +1083,8 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 							: resolvedWebcamPath.current;
 						await finalizeRecordingSession(videoResult.path, webcamPath);
 					}
-				} catch (error) {
-					console.error("Error saving recording:", error);
+				} catch {
+					// Error saving recording
 				}
 			};
 			recorder.onerror = () => {
@@ -1124,7 +1099,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			setRecording(true);
 			window.electronAPI?.setRecordingState(true);
 		} catch (error) {
-			console.error("Failed to start recording:", error);
 			alert(
 				error instanceof Error
 					? `Failed to start recording: ${error.message}`
@@ -1145,7 +1119,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			void (async () => {
 				const result = await window.electronAPI.pauseNativeScreenRecording();
 				if (!result.success) {
-					console.error("Failed to pause native screen recording:", result.error ?? result.message);
 					return;
 				}
 
@@ -1173,10 +1146,6 @@ export function useScreenRecorder(): UseScreenRecorderReturn {
 			void (async () => {
 				const result = await window.electronAPI.resumeNativeScreenRecording();
 				if (!result.success) {
-					console.error(
-						"Failed to resume native screen recording:",
-						result.error ?? result.message,
-					);
 					return;
 				}
 

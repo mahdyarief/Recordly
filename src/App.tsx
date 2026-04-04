@@ -14,7 +14,7 @@ import { loadAllCustomFonts } from "./lib/customFonts";
 
 export default function App() {
 	const [windowType, setWindowType] = useState("");
-	const { locale, t } = useI18n();
+	const { t } = useI18n();
 
 	useEffect(() => {
 		const params = new URLSearchParams(window.location.search);
@@ -49,7 +49,7 @@ export default function App() {
 	useEffect(() => {
 		document.title =
 			windowType === "editor" ? t("app.editorTitle", "Recordly Editor") : t("app.name", "Recordly");
-	}, [windowType, locale, t]);
+	}, [windowType, t]);
 
 	switch (windowType) {
 		case "hud-overlay":

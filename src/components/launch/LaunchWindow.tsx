@@ -697,12 +697,15 @@ export function LaunchWindow() {
 					version: updateStatus.currentVersion,
 				});
 			case "available":
-			case "ready":
-				return updateStatus.availableVersion
-					? t("recording.update.availableTitle", "Recordly {{version}} is available.", {
-							version: updateStatus.availableVersion,
-						})
-					: t("recording.update.availableGenericTitle");
+			case "ready": {
+				const v = updateStatus.availableVersion;
+				if (v) {
+					return t("recording.update.availableTitle", "Recordly {{version}} is available.", {
+						version: v,
+					});
+				}
+				return t("recording.update.availableGenericTitle");
+			}
 			case "downloading":
 				return updateStatus.detail ?? t("recording.update.downloadingTitle");
 			case "checking":

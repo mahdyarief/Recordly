@@ -288,11 +288,15 @@ function hasUsableSourceThumbnail(
 }
 
 function getMacPrivacySettingsUrl(pane: "screen" | "accessibility" | "microphone") {
-	if (pane === "screen")
-		return "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
-	if (pane === "microphone")
-		return "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
-	return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+	switch (pane) {
+		case "screen":
+			return "x-apple.systempreferences:com.apple.preference.security?Privacy_ScreenCapture";
+		case "microphone":
+			return "x-apple.systempreferences:com.apple.preference.security?Privacy_Microphone";
+		case "accessibility":
+		default:
+			return "x-apple.systempreferences:com.apple.preference.security?Privacy_Accessibility";
+	}
 }
 
 function isAutoRecordingPath(filePath: string) {
@@ -531,11 +535,12 @@ async function loadRecentProjectPaths() {
 	try {
 		const content = await fs.readFile(RECENT_PROJECTS_FILE, "utf-8");
 		const parsed = JSON.parse(content) as { paths?: unknown };
-		return Array.isArray(parsed.paths)
+		const paths = Array.isArray(parsed.paths)
 			? parsed.paths.filter(
 					(value): value is string => typeof value === "string" && value.trim().length > 0,
 				)
 			: [];
+		return paths;
 	} catch {
 		return [];
 	}
@@ -941,10 +946,14 @@ async function pruneAutoRecordings(exemptPaths: string[] = []) {
 			// Clean up companion audio files left from recording (macOS .m4a, Windows .wav)
 			const base = entry.filePath.replace(/\.(mp4|mov|webm)$/i, "");
 			for (const suffix of [".system.m4a", ".mic.m4a", ".system.wav", ".mic.wav"]) {
-				await fs.rm(base + suffix, { force: true }).catch(() => {});
+				const companion = base + suffix;
+				// Optional cleanup of companion audio
+				await fs.rm(companion, { force: true }).catch(() => {
+					/* silent non-fatal failure */
+				});
 			}
-		} catch (error) {
-			console.warn("Failed to prune old auto recording:", entry.filePath, error);
+		} catch {
+			// Failed to prune old auto recording
 		}
 	}
 }
@@ -1478,10 +1487,10 @@ function isFiniteNumber(value: unknown): value is number {
 }
 
 function buildCaptionTextFromWords(words: CaptionWordPayload[]) {
-	return words
-		.map((word, index) => `${index > 0 && word.leadingSpace ? " " : ""}${word.text}`)
-		.join("")
-		.trim();
+	const mapped = words.map(
+		(word, index) => `${index > 0 && word.leadingSpace ? " " : ""}${word.text}`,
+	);
+	return mapped.join("").trim();
 }
 
 function parseWhisperJsonWords(tokens: unknown) {
@@ -1551,8 +1560,8 @@ function parseWhisperJsonCues(content: string) {
 			return [];
 		}
 
-		return parsed.transcription
-			.map((segment, index) => {
+		const transcription = parsed.transcription;
+		return transcription.map((segment, index) => {
 				if (!segment || typeof segment !== "object") {
 					return null;
 				}
@@ -1586,16 +1595,15 @@ function parseWhisperJsonCues(content: string) {
 				};
 			})
 			.filter((cue): cue is CaptionCuePayload => cue != null);
-	} catch (error) {
-		console.warn("[auto-captions] Failed to parse Whisper JSON output:", error);
+	} catch {
+		// Failed to parse Whisper JSON output
 		return [];
 	}
 }
 
 function parseSrtCues(content: string) {
-	return content
-		.split(/\r?\n\r?\n/)
-		.map((block, index) => {
+	const blocks = content.split(/\r?\n\r?\n/);
+	return blocks.map((block, index) => {
 			const lines = block.split(/\r?\n/).map((line) => line.trim());
 			const timingLine = lines.find((line) => line.includes("-->"));
 			if (!timingLine) {
@@ -1768,11 +1776,7 @@ async function extractCaptionAudioSource(options: {
 		}
 	}
 
-	console.warn(
-		"[auto-captions] No audio source candidate could be extracted:",
-		attemptedCandidates,
-	);
-
+	// No audio source candidate could be extracted
 	throw new Error(
 		"No audio was found to transcribe in the saved recording file. Captions need an audio track. If this recording should have contained sound, the recording was saved without an audio stream.",
 	);
@@ -1837,10 +1841,8 @@ async function generateAutoCaptionsFromVideo(options: {
 			}
 
 			jsonEnabled = false;
-			console.warn(
-				"[auto-captions] Whisper runtime does not support JSON full output, retrying with SRT only:",
-				error,
-			);
+			jsonEnabled = false;
+			// Retry without JSON output
 			await execFileAsync(whisperExecutablePath, whisperBaseArgs, {
 				timeout: 30 * 60 * 1000,
 				maxBuffer: 20 * 1024 * 1024,
@@ -2339,15 +2341,16 @@ async function muxNativeWindowsVideoWithAudio(
 		try {
 			const stat = await fs.stat(audioPath);
 			if (stat.size <= 0) {
-				console.warn(`[mux-win] Skipping ${label} audio: file is empty (${audioPath})`);
-				await fs.rm(audioPath, { force: true }).catch(() => {});
+				await fs.rm(audioPath, { force: true }).catch(() => {
+					// Audio cleanup failure is non-fatal
+				});
 				continue;
 			}
 			inputs.push("-i", audioPath);
 			audioInputs.push(label);
 			audioFilePaths.push(audioPath);
 		} catch {
-			console.warn(`[mux-win] Skipping ${label} audio: file not accessible (${audioPath})`);
+			// File not accessible
 		}
 	}
 
@@ -2366,9 +2369,7 @@ async function muxNativeWindowsVideoWithAudio(
 				audioDuration > 0 ? Math.max(0, Math.round((videoDuration - audioDuration) * 1000)) : 0;
 			audioDelays.set(audioInputs[i], delayMs);
 			if (delayMs > 0) {
-				console.log(
-					`[mux-win] ${audioInputs[i]} audio is ${(delayMs / 1000).toFixed(2)}s shorter than video — adding ${delayMs}ms delay`,
-				);
+				// Mux delay needed for this input
 			}
 		}
 	}
@@ -2504,7 +2505,10 @@ async function muxNativeWindowsVideoWithAudio(
 	// Clean up audio files
 	for (const audioPath of [systemAudioPath, micAudioPath]) {
 		if (audioPath) {
-			await fs.rm(audioPath, { force: true }).catch(() => {});
+			// Wipe temp audio files after muxing
+			await fs.rm(audioPath, { force: true }).catch(() => {
+				/* cleanup failure is non-fatal */
+			});
 		}
 	}
 }
@@ -2712,20 +2716,20 @@ async function muxNativeMacRecordingWithAudio(
 		try {
 			const stat = await fs.stat(audioPath);
 			if (stat.size <= 0) {
-				console.warn(`[mux] Skipping ${label} audio: file is empty (${audioPath})`);
-				await fs.rm(audioPath, { force: true }).catch(() => {});
+				await fs.rm(audioPath, { force: true }).catch(() => {
+					// Audio cleanup failure is non-fatal
+				});
 				continue;
 			}
 			inputs.push("-i", audioPath);
 			availableAudioInputs.push(label);
 			audioFilePaths.push(audioPath);
 		} catch {
-			console.warn(`[mux] Skipping ${label} audio: file not accessible (${audioPath})`);
+			// File not accessible
 		}
 	}
 
 	if (availableAudioInputs.length === 0) {
-		console.warn("[mux] No valid audio files to mux");
 		return;
 	}
 
@@ -2741,9 +2745,7 @@ async function muxNativeMacRecordingWithAudio(
 				audioDuration > 0 ? Math.max(0, Math.round((videoDuration - audioDuration) * 1000)) : 0;
 			audioDelays.set(availableAudioInputs[i], delayMs);
 			if (delayMs > 0) {
-				console.log(
-					`[mux] ${availableAudioInputs[i]} audio is ${(delayMs / 1000).toFixed(2)}s shorter than video — adding ${delayMs}ms delay`,
-				);
+				// Mux delay needed for this input
 			}
 		}
 	}
@@ -2844,22 +2846,22 @@ async function muxNativeMacRecordingWithAudio(
 		}
 	}
 
-	console.log("[mux] Running ffmpeg:", ffmpegPath, args.join(" "));
+	// Running muxing helper
 
 	try {
 		await execFileAsync(ffmpegPath, args, { timeout: 120000, maxBuffer: 10 * 1024 * 1024 });
 	} catch (error) {
-		const execError = error as NodeJS.ErrnoException & { stderr?: string };
-		console.error("[mux] ffmpeg failed:", execError.stderr || execError.message);
 		throw error;
 	}
 
 	await moveFileWithOverwrite(mixedOutputPath, videoPath);
-	console.log("[mux] Successfully muxed audio into video:", videoPath);
 
 	for (const audioPath of [systemAudioPath, microphonePath]) {
 		if (audioPath) {
-			await fs.rm(audioPath, { force: true }).catch(() => {});
+			// Wipe temp audio files
+			await fs.rm(audioPath, { force: true }).catch(() => {
+				/* cleanup failure is non-fatal */
+			});
 		}
 	}
 }
@@ -2990,7 +2992,6 @@ async function startNativeCursorMonitor() {
 			try {
 				await fs.access(helperPath, fsConstants.X_OK);
 			} catch {
-				console.warn("Windows cursor monitor helper missing or not executable:", helperPath);
 				currentCursorVisualType = "arrow";
 				return;
 			}
@@ -3391,18 +3392,15 @@ async function finalizeStoredVideo(videoPath: string) {
 		const companionCandidates = await getUsableCompanionAudioCandidates(videoPath);
 		for (const { systemPath, micPath, platform } of companionCandidates) {
 			if (platform === "mac" || platform === "win") {
-				console.log(
-					`[finalize] Detected un-muxed ${platform} audio files alongside video — attempting safety-net mux`,
-				);
+				// Detected un-muxed files alongside video — attempting safety-net mux
 				try {
 					if (platform === "win") {
 						await muxNativeWindowsVideoWithAudio(videoPath, systemPath, micPath);
 					} else {
 						await muxNativeMacRecordingWithAudio(videoPath, systemPath, micPath);
 					}
-					console.log("[finalize] Safety-net mux completed successfully");
-				} catch (error) {
-					console.warn("[finalize] Safety-net mux failed:", error);
+				} catch {
+					// Safety-net mux failed
 				}
 				break;
 			}
@@ -3412,8 +3410,8 @@ async function finalizeStoredVideo(videoPath: string) {
 	let validation: { fileSizeBytes: number; durationSeconds: number | null } | null = null;
 	try {
 		validation = await validateRecordedVideo(videoPath);
-	} catch (error) {
-		console.warn("Video validation failed (proceeding anyway):", error);
+	} catch {
+		// Video validation failed (proceeding anyway)
 	}
 
 	snapshotCursorTelemetryForPersistence();
@@ -3505,20 +3503,12 @@ async function startInteractionCapture() {
 
 	try {
 		const hook = loadUiohookModule();
-		console.log(
-			"[CursorTelemetry] hook loaded:",
-			!!hook,
-			"has.on:",
-			typeof hook?.on,
-			"has.start:",
-			typeof hook?.start,
-		);
+		// Initializing CursorTelemetry hook
 		if (!isCursorCaptureActive) {
 			return;
 		}
 
 		if (!hook || typeof hook.on !== "function" || typeof hook.start !== "function") {
-			console.log("[CursorTelemetry] hook unusable — aborting interaction capture");
 			return;
 		}
 
@@ -3623,9 +3613,13 @@ async function startInteractionCapture() {
 function validateRecordingArea(area: any): area is WindowBounds {
 	if (!area || typeof area !== "object") return false;
 	const { x, y, width, height } = area;
-	if (![x, y, width, height].every((v) => typeof v === "number" && Number.isFinite(v)))
+	if (![x, y, width, height].every((v) => typeof v === "number" && Number.isFinite(v))) {
 		return false;
-	if (width <= 0 || height <= 0) return false;
+	}
+	const validDim = width > 0 && height > 0;
+	if (!validDim) {
+		return false;
+	}
 
 	const intersectingDisplays = getScreen()
 		.getAllDisplays()
@@ -3691,11 +3685,8 @@ export function registerIpcHandlers(
 							...opts,
 							types: electronTypes,
 						})
-						.catch((error) => {
-							console.warn(
-								"desktopCapturer.getSources failed (screen recording permission may be missing):",
-								error,
-							);
+						.catch(() => {
+							// desktopCapturer.getSources failed (likely permission missing)
 							return [];
 						})
 				: [];
@@ -3919,7 +3910,6 @@ export function registerIpcHandlers(
 		};
 
 		if (!validateRecordingArea(globalArea)) {
-			console.warn("Rejecting area selection: invalid or spans multiple monitors");
 			return { success: false, error: "Select a valid area on a single monitor" };
 		}
 
@@ -4130,7 +4120,6 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 	});
 
 	ipcMain.handle("switch-to-editor", () => {
-		console.log("[switch-to-editor] Opening editor window");
 		createEditorWindow();
 	});
 
@@ -4686,16 +4675,9 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 			const preferredVideoPath = nativeCaptureTargetPath;
 			const preferredSystemAudioPath = nativeCaptureSystemAudioPath;
 			const preferredMicrophonePath = nativeCaptureMicrophonePath;
-			console.log(
-				"[stop-native] Audio paths — system:",
-				preferredSystemAudioPath,
-				"mic:",
-				preferredMicrophonePath,
-			);
 			nativeCaptureStopRequested = true;
 			process.stdin.write("stop\n");
 			const tempVideoPath = await waitForNativeCaptureStop(process);
-			console.log("[stop-native] Helper stopped, tempVideoPath:", tempVideoPath);
 			nativeCaptureProcess = null;
 			nativeScreenRecordingActive = false;
 			nativeCaptureTargetPath = null;
@@ -4710,27 +4692,20 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 			}
 
 			if (preferredSystemAudioPath || preferredMicrophonePath) {
-				console.log(
-					"[stop-native] Attempting audio mux (merging separate tracks) into:",
-					finalVideoPath,
-				);
 				try {
 					await muxNativeMacRecordingWithAudio(
 						finalVideoPath,
 						preferredSystemAudioPath,
 						preferredMicrophonePath,
 					);
-					console.log("[stop-native] Audio mux completed successfully");
-				} catch (error) {
-					console.warn("[stop-native] Audio mux failed (video still has inline audio):", error);
+				} catch {
+					// Audio mux failed (video still has inline audio)
 				}
-			} else {
-				console.log("[stop-native] No separate audio tracks to mux");
 			}
 
 			return await finalizeStoredVideo(finalVideoPath);
 		} catch (error) {
-			console.error("Failed to stop native ScreenCaptureKit recording:", error);
+			// Failed to stop native ScreenCaptureKit recording
 			const fallbackPath = nativeCaptureTargetPath;
 			const fallbackSystemAudioPath = nativeCaptureSystemAudioPath;
 			const fallbackMicrophonePath = nativeCaptureMicrophonePath;
@@ -4765,12 +4740,8 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 
 			// Try to recover: if the target file exists on disk, finalize with it
 			if (fallbackPath) {
-				try {
-					await fs.access(fallbackPath);
-					console.log(
-						"[stop-native-screen-recording] Recovering with fallback path:",
-						fallbackPath,
-					);
+					try {
+						await fs.access(fallbackPath);
 					if (fallbackSystemAudioPath || fallbackMicrophonePath) {
 						try {
 							await muxNativeMacRecordingWithAudio(
@@ -4778,8 +4749,8 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 								fallbackSystemAudioPath,
 								fallbackMicrophonePath,
 							);
-						} catch (muxError) {
-							console.warn("Failed to mux recovered native macOS audio into capture:", muxError);
+						} catch {
+							// Failed to mux recovered native macOS audio
 						}
 					}
 					return await finalizeStoredVideo(fallbackPath);
@@ -4795,8 +4766,7 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 
 			return {
 				success: false,
-				message: "Failed to stop native ScreenCaptureKit recording",
-				error: String(error),
+				message: "Failed to stop native ScreenCaptureKit recording"
 			};
 		}
 	});
@@ -5916,7 +5886,10 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 			await fs.unlink(filePath);
 			// Also delete the cursor telemetry sidecar if it exists
 			const telemetryPath = getTelemetryPathForVideo(filePath);
-			await fs.unlink(telemetryPath).catch(() => {});
+			// Removing sidecar
+			await fs.rm(telemetryPath, { force: true }).catch(() => {
+				/* exclusion non-fatal */
+			});
 			if (currentVideoPath === filePath) {
 				currentVideoPath = null;
 				currentRecordingSession = null;
@@ -5960,9 +5933,8 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 		try {
 			await fs.writeFile(SHORTCUTS_FILE, JSON.stringify(shortcuts, null, 2), "utf-8");
 			return { success: true };
-		} catch (error) {
-			console.error("Failed to save shortcuts:", error);
-			return { success: false, error: String(error) };
+		} catch {
+			return { success: false };
 		}
 	});
 
@@ -6032,9 +6004,8 @@ body{background:transparent;overflow:hidden;width:100vw;height:100vh}
 		try {
 			await fs.writeFile(COUNTDOWN_SETTINGS_FILE, JSON.stringify({ delay }, null, 2), "utf-8");
 			return { success: true };
-		} catch (error) {
-			console.error("Failed to save countdown delay:", error);
-			return { success: false, error: String(error) };
+		} catch {
+			return { success: false };
 		}
 	});
 

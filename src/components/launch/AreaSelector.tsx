@@ -233,7 +233,7 @@ export function AreaSelector() {
 
 		window.addEventListener("keydown", handleKeyDown);
 		return () => window.removeEventListener("keydown", handleKeyDown);
-	}, [selection]);
+	}, [confirmSelection]);
 
 	return (
 		<div

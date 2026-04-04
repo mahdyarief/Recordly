@@ -55,8 +55,6 @@ if (process.platform === "darwin") {
 async function ensureRecordingsDir() {
 	try {
 		await fs.mkdir(RECORDINGS_DIR, { recursive: true });
-		console.log("RECORDINGS_DIR:", RECORDINGS_DIR);
-		console.log("User Data Path:", app.getPath("userData"));
 	} catch (error) {
 		console.error("Failed to create recordings directory:", error);
 	}
@@ -691,14 +689,10 @@ app.whenReady().then(async () => {
 		const cameraStatus = systemPreferences.getMediaAccessStatus("camera");
 		const micStatus = systemPreferences.getMediaAccessStatus("microphone");
 		if (cameraStatus !== "granted") {
-			console.warn(
-				`[permissions] Camera access is "${cameraStatus}" — webcam may not work. Check Windows Settings > Privacy > Camera.`,
-			);
+			// Camera access is not granted — webcam may not work. Check Windows Settings > Privacy > Camera.
 		}
 		if (micStatus !== "granted") {
-			console.warn(
-				`[permissions] Microphone access is "${micStatus}" — mic recording may not work. Check Windows Settings > Privacy > Microphone.`,
-			);
+			// Microphone access is not granted — mic recording may not work. Check Windows Settings > Privacy > Microphone.
 		}
 	}
 
