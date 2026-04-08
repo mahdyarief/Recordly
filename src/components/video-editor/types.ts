@@ -105,6 +105,7 @@ export const DEFAULT_WEBCAM_POSITION_X = 1;
 export const DEFAULT_WEBCAM_POSITION_Y = 1;
 export const DEFAULT_WEBCAM_TIME_OFFSET_MS = 0;
 
+export const DEFAULT_ZOOM_SMOOTHNESS = 0.5;
 export const DEFAULT_WEBCAM_OVERLAY: WebcamOverlaySettings = {
 	enabled: false,
 	sourcePath: null,

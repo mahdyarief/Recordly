@@ -30,6 +30,7 @@
 			"turtle": "Turtle"
 		},
 		"backgroundBlur": "Background Blur",
+		"zoomSmoothness": "Zoom Smoothing",
 		"zoomMotionBlur": "Zoom Motion Blur",
 		"connectZooms": "Connect Zooms",
 		"zoomGeneralTitle": "General",

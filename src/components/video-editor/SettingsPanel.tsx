@@ -15,7 +15,11 @@ import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { getAssetPath, getRenderableAssetUrl } from "@/lib/assetPath";
 import { cn } from "@/lib/utils";
 import type { BuiltInWallpaper } from "@/lib/wallpapers";
-import { BUILT_IN_WALLPAPERS, getAvailableWallpapers, isVideoWallpaperSource } from "@/lib/wallpapers";
+import {
+	BUILT_IN_WALLPAPERS,
+	getAvailableWallpapers,
+	isVideoWallpaperSource,
+} from "@/lib/wallpapers";
 import { type AspectRatio } from "@/utils/aspectRatioUtils";
 import minimalCursorUrl from "../../../Minimal Cursor.svg";
 import amongusCursorUrl from "../../assets/cursors/amongus/default.png";
@@ -160,6 +164,8 @@ interface SettingsPanelProps {
 	onShadowChange?: (intensity: number) => void;
 	backgroundBlur?: number;
 	onBackgroundBlurChange?: (amount: number) => void;
+	zoomSmoothness?: number;
+	onZoomSmoothnessChange?: (amount: number) => void;
 	zoomMotionBlur?: number;
 	onZoomMotionBlurChange?: (amount: number) => void;
 	connectZooms?: boolean;
@@ -520,6 +526,8 @@ export function SettingsPanel({
 	onShadowChange,
 	backgroundBlur = 0,
 	onBackgroundBlurChange,
+	zoomSmoothness = 1.0,
+	onZoomSmoothnessChange,
 	zoomMotionBlur = 0,
 	onZoomMotionBlurChange,
 	showCursor = false,
@@ -811,8 +819,13 @@ export function SettingsPanel({
 						preload="metadata"
 						className="h-full w-full select-none object-cover [transform:translateZ(0)]"
 						draggable={false}
-						onMouseEnter={(e) => e.currentTarget.play().catch((err) => console.warn("Hover play fail:", err))}
-						onMouseLeave={(e) => { e.currentTarget.pause(); e.currentTarget.currentTime = 0; }}
+						onMouseEnter={(e) =>
+							e.currentTarget.play().catch((err) => console.warn("Hover play fail:", err))
+						}
+						onMouseLeave={(e) => {
+							e.currentTarget.pause();
+							e.currentTarget.currentTime = 0;
+						}}
 					/>
 				) : (
 					<img
@@ -830,7 +843,6 @@ export function SettingsPanel({
 			{props?.children}
 		</div>
 	);
-
 
 	const handleDeleteClick = () => {
 		if (selectedZoomId && onZoomDelete) {
@@ -994,7 +1006,9 @@ export function SettingsPanel({
 			if (!result?.success || !result.path) return;
 			const filePath = result.path as string;
 			if (!isVideoWallpaperSource(filePath)) {
-				toast.error("Unsupported format", { description: "Please select a video file (mp4, webm, mov, etc.)" });
+				toast.error("Unsupported format", {
+					description: "Please select a video file (mp4, webm, mov, etc.)",
+				});
 				return;
 			}
 			setCustomImages((prev) => [filePath, ...prev]);
@@ -1118,7 +1132,8 @@ export function SettingsPanel({
 											return renderWallpaperImageTile(imageUrl, isSelected, {
 												key: `custom-${idx}`,
 												ariaLabel: isVideoWallpaperSource(imageUrl)
-													? imageUrl.split(/[\\/]/).pop() ?? tSettings("background.video", "Video background")
+													? (imageUrl.split(/[\\/]/).pop() ??
+														tSettings("background.video", "Video background"))
 													: undefined,
 												title: isVideoWallpaperSource(imageUrl)
 													? imageUrl.split(/[\\/]/).pop()
@@ -1138,19 +1153,22 @@ export function SettingsPanel({
 										{(wallpaperPreviewPaths.length > 0
 											? wallpaperPreviewPaths
 											: builtInWallpaperPaths
-										).filter(p => !isVideoWallpaperSource(p)).map((previewPath, filteredIndex) => {
-											const imageWallpapers = builtInWallpapers.filter(w => !isVideoWallpaperSource(w.publicPath));
-											const wallpaper = imageWallpapers[filteredIndex];
-											const wallpaperValue =
-												wallpaper?.publicPath ?? previewPath;
-											const isSelected = getWallpaperTileState(wallpaperValue, previewPath);
-											return renderWallpaperImageTile(previewPath, isSelected, {
-												key: wallpaperValue,
-												ariaLabel: wallpaper?.label ?? `Wallpaper ${filteredIndex + 1}`,
-												title: wallpaper?.label ?? `Wallpaper ${filteredIndex + 1}`,
-												onClick: () => onWallpaperChange(wallpaperValue),
-											});
-										})}
+										)
+											.filter((p) => !isVideoWallpaperSource(p))
+											.map((previewPath, filteredIndex) => {
+												const imageWallpapers = builtInWallpapers.filter(
+													(w) => !isVideoWallpaperSource(w.publicPath),
+												);
+												const wallpaper = imageWallpapers[filteredIndex];
+												const wallpaperValue = wallpaper?.publicPath ?? previewPath;
+												const isSelected = getWallpaperTileState(wallpaperValue, previewPath);
+												return renderWallpaperImageTile(previewPath, isSelected, {
+													key: wallpaperValue,
+													ariaLabel: wallpaper?.label ?? `Wallpaper ${filteredIndex + 1}`,
+													title: wallpaper?.label ?? `Wallpaper ${filteredIndex + 1}`,
+													onClick: () => onWallpaperChange(wallpaperValue),
+												});
+											})}
 									</div>
 								</div>
 							) : backgroundTab === "video" ? (
@@ -1183,16 +1201,18 @@ export function SettingsPanel({
 											});
 										})}
 
-										{BUILT_IN_WALLPAPERS.filter(w => isVideoWallpaperSource(w.publicPath)).map((wallpaper) => {
-											const wallpaperValue = wallpaper.publicPath;
-											const isSelected = selected === wallpaperValue;
-											return renderWallpaperImageTile(wallpaperValue, isSelected, {
-												key: wallpaperValue,
-												ariaLabel: wallpaper.label,
-												title: wallpaper.label,
-												onClick: () => onWallpaperChange(wallpaperValue),
-											});
-										})}
+										{BUILT_IN_WALLPAPERS.filter((w) => isVideoWallpaperSource(w.publicPath)).map(
+											(wallpaper) => {
+												const wallpaperValue = wallpaper.publicPath;
+												const isSelected = selected === wallpaperValue;
+												return renderWallpaperImageTile(wallpaperValue, isSelected, {
+													key: wallpaperValue,
+													ariaLabel: wallpaper.label,
+													title: wallpaper.label,
+													onClick: () => onWallpaperChange(wallpaperValue),
+												});
+											},
+										)}
 									</div>
 								</div>
 							) : backgroundTab === "color" ? (
@@ -1328,6 +1348,17 @@ export function SettingsPanel({
 					</button>
 				</div>
 			</div>
+			<SliderControl
+				label={tSettings("effects.zoomSmoothness", "Zoom Smoothing")}
+				value={zoomSmoothness}
+				defaultValue={1.0}
+				min={0}
+				max={2}
+				step={0.05}
+				onChange={(v) => onZoomSmoothnessChange?.(v)}
+				formatValue={(v) => `${v.toFixed(2)}×`}
+				parseInput={(text) => parseFloat(text.replace(/×$/, ""))}
+			/>
 			<SliderControl
 				label={tSettings("effects.zoomMotionBlur")}
 				value={zoomMotionBlur}
@@ -2051,7 +2082,10 @@ export function SettingsPanel({
 
 	return (
 		<div className="flex-[2] w-[332px] min-w-[280px] max-w-[332px] bg-[#161619] border border-white/10 rounded-2xl flex flex-col shadow-xl h-full overflow-hidden">
-			<div className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 pb-0" style={{ scrollbarGutter: 'stable' }}>
+			<div
+				className="flex-1 min-h-0 overflow-y-auto custom-scrollbar p-4 pb-0"
+				style={{ scrollbarGutter: "stable" }}
+			>
 				<AnimatePresence mode="wait" initial={false}>
 					<motion.div
 						key={activeEffectSection}
@@ -2065,10 +2099,12 @@ export function SettingsPanel({
 				</AnimatePresence>
 			</div>
 
-			<div className={cn(
-				"flex-shrink-0 border-t border-white/10 bg-[#151518] p-4 pt-3",
-				!selectedZoomId && !selectedTrimId && !selectedSpeedId && !selectedClipId && "hidden"
-			)}>
+			<div
+				className={cn(
+					"flex-shrink-0 border-t border-white/10 bg-[#151518] p-4 pt-3",
+					!selectedZoomId && !selectedTrimId && !selectedSpeedId && !selectedClipId && "hidden",
+				)}
+			>
 				{selectedZoomId && (
 					<div className="mb-4">
 						<div className="mb-3 flex items-center justify-between">
@@ -2224,6 +2260,5 @@ export function SettingsPanel({
 				)}
 			</div>
 		</div>
-
 	);
 }

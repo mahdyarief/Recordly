@@ -18,6 +18,7 @@ import {
 	type AutoCaptionSettings,
 	type CaptionCue,
 	type CaptionCueWord,
+	type ClipRegion,
 	type CropRegion,
 	type CursorStyle,
 	DEFAULT_ANNOTATION_POSITION,
@@ -54,10 +55,10 @@ import {
 	DEFAULT_ZOOM_MOTION_BLUR,
 	DEFAULT_ZOOM_OUT_DURATION_MS,
 	DEFAULT_ZOOM_OUT_EASING,
+	DEFAULT_ZOOM_SMOOTHNESS,
 	getDefaultCaptionFontFamily,
 	type SpeedRegion,
 	type TrimRegion,
-	type ClipRegion,
 	type WebcamOverlaySettings,
 	type ZoomRegion,
 	type ZoomTransitionEasing,
@@ -69,6 +70,7 @@ export interface ProjectEditorState {
 	wallpaper: string;
 	shadowIntensity: number;
 	backgroundBlur: number;
+	zoomSmoothness: number;
 	zoomMotionBlur: number;
 	connectZooms: boolean;
 	zoomInDurationMs: number;
@@ -282,6 +284,9 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		: legacyShowBlur
 			? 2
 			: 0;
+	const normalizedZoomSmoothness = isFiniteNumber(editor.zoomSmoothness)
+		? clamp(editor.zoomSmoothness, 0, 2)
+		: DEFAULT_ZOOM_SMOOTHNESS;
 	const normalizedZoomInDurationMs = isFiniteNumber(editor.zoomInDurationMs)
 		? clamp(editor.zoomInDurationMs, 60, 4000)
 		: DEFAULT_ZOOM_IN_DURATION_MS;
@@ -594,6 +599,7 @@ export function normalizeProjectEditor(editor: Partial<ProjectEditorState>): Pro
 		wallpaper: typeof editor.wallpaper === "string" ? editor.wallpaper : DEFAULT_WALLPAPER_PATH,
 		shadowIntensity: typeof editor.shadowIntensity === "number" ? editor.shadowIntensity : 0.67,
 		backgroundBlur: normalizedBackgroundBlur,
+		zoomSmoothness: normalizedZoomSmoothness,
 		zoomMotionBlur: normalizedZoomMotionBlur,
 		connectZooms: typeof editor.connectZooms === "boolean" ? editor.connectZooms : true,
 		zoomInDurationMs: normalizedZoomInDurationMs,

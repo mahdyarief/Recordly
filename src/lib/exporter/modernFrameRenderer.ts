@@ -73,6 +73,7 @@ interface FrameRenderConfig {
 	showShadow: boolean;
 	shadowIntensity: number;
 	backgroundBlur: number;
+	zoomSmoothness?: number;
 	zoomMotionBlur?: number;
 	connectZooms?: boolean;
 	zoomInDurationMs?: number;
@@ -353,9 +354,8 @@ export class FrameRenderer {
 			return;
 		}
 
-		const activeFilters = this.shouldUseZoomMotionBlur() && this.motionBlurFilter
-			? [this.motionBlurFilter]
-			: null;
+		const activeFilters =
+			this.shouldUseZoomMotionBlur() && this.motionBlurFilter ? [this.motionBlurFilter] : null;
 		this.videoEffectsContainer.filters = activeFilters;
 	}
 
@@ -610,11 +610,7 @@ export class FrameRenderer {
 		}
 
 		const padding = getShadowFilterPadding(options.blur, options.offsetY);
-		this.ensureShadowLayerCanvas(
-			layer,
-			options.width + padding * 2,
-			options.height + padding * 2,
-		);
+		this.ensureShadowLayerCanvas(layer, options.width + padding * 2, options.height + padding * 2);
 
 		if (!layer.context || !layer.canvas || !layer.sprite) {
 			layer.container.visible = false;
@@ -2298,8 +2294,14 @@ export class FrameRenderer {
 				);
 				gl2.bindFramebuffer(gl2.READ_FRAMEBUFFER, null);
 				gl2.blitFramebuffer(
-					0, 0, width, height,
-					0, 0, width, height,
+					0,
+					0,
+					width,
+					height,
+					0,
+					0,
+					width,
+					height,
 					gl2.COLOR_BUFFER_BIT,
 					gl2.NEAREST,
 				);
@@ -2307,9 +2309,7 @@ export class FrameRenderer {
 				gl2.readPixels(0, 0, width, height, gl2.RGBA, gl2.UNSIGNED_BYTE, pixelBuffer);
 				glError = gl2.getError();
 				if (glError !== gl2.NO_ERROR) {
-					throw new Error(
-						`[FrameRenderer] WebGL FBO readPixels failed with error code ${glError}`,
-					);
+					throw new Error(`[FrameRenderer] WebGL FBO readPixels failed with error code ${glError}`);
 				}
 			} finally {
 				gl2.bindFramebuffer(gl2.FRAMEBUFFER, null);

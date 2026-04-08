@@ -80,18 +80,18 @@ import {
 	RECORDLY_ISSUES_URL,
 } from "./TutorialHelp";
 import TimelineEditor from "./timeline/TimelineEditor";
-import {
-	normalizeCursorTelemetry,
-} from "./timeline/zoomSuggestionUtils";
+import { normalizeCursorTelemetry } from "./timeline/zoomSuggestionUtils";
 import {
 	type AnnotationRegion,
 	type AudioRegion,
 	type AutoCaptionSettings,
 	type CaptionCue,
+	type ClipRegion,
 	type CropRegion,
 	type CursorStyle,
 	type CursorTelemetryPoint,
 	clampFocusToDepth,
+	clipsToTrims,
 	DEFAULT_ANNOTATION_POSITION,
 	DEFAULT_ANNOTATION_SIZE,
 	DEFAULT_ANNOTATION_STYLE,
@@ -110,12 +110,11 @@ import {
 	DEFAULT_ZOOM_IN_OVERLAP_MS,
 	DEFAULT_ZOOM_OUT_DURATION_MS,
 	DEFAULT_ZOOM_OUT_EASING,
+	DEFAULT_ZOOM_SMOOTHNESS,
 	type FigureData,
 	type PlaybackSpeed,
 	type SpeedRegion,
 	type TrimRegion,
-	type ClipRegion,
-	clipsToTrims,
 	type WebcamOverlaySettings,
 	type ZoomDepth,
 	type ZoomFocus,
@@ -252,16 +251,16 @@ function getSmokeExportConfig(search: string): SmokeExportConfig {
 					: enabled && params.get("smokeEncodingMode") === "quality"
 						? "quality"
 						: undefined,
-			shadowIntensity: enabled
-				? parseSmokeExportNonNegativeNumber(params.get("smokeShadowIntensity"))
-				: undefined,
-				webcamInputPath: enabled ? params.get("smokeWebcamInput") : null,
-				webcamShadow: enabled
-					? parseSmokeExportNonNegativeNumber(params.get("smokeWebcamShadow"))
-					: undefined,
-				webcamSize: enabled
-					? parseSmokeExportNonNegativeNumber(params.get("smokeWebcamSize"))
-					: undefined,
+		shadowIntensity: enabled
+			? parseSmokeExportNonNegativeNumber(params.get("smokeShadowIntensity"))
+			: undefined,
+		webcamInputPath: enabled ? params.get("smokeWebcamInput") : null,
+		webcamShadow: enabled
+			? parseSmokeExportNonNegativeNumber(params.get("smokeWebcamShadow"))
+			: undefined,
+		webcamSize: enabled
+			? parseSmokeExportNonNegativeNumber(params.get("smokeWebcamSize"))
+			: undefined,
 		pipelineModel:
 			enabled && params.get("smokePipelineModel") === "modern"
 				? "modern"
@@ -278,7 +277,9 @@ function getSmokeExportConfig(search: string): SmokeExportConfig {
 						: undefined,
 		maxEncodeQueue: enabled ? parseSmokeExportNumber(params.get("smokeMaxEncodeQueue")) : undefined,
 		maxDecodeQueue: enabled ? parseSmokeExportNumber(params.get("smokeMaxDecodeQueue")) : undefined,
-		maxPendingFrames: enabled ? parseSmokeExportNumber(params.get("smokeMaxPendingFrames")) : undefined,
+		maxPendingFrames: enabled
+			? parseSmokeExportNumber(params.get("smokeMaxPendingFrames"))
+			: undefined,
 	};
 }
 
@@ -498,7 +499,9 @@ export default function VideoEditor() {
 	);
 	const [cursorSize, setCursorSize] = useState(initialEditorPreferences.cursorSize);
 	const [cursorSmoothing, setCursorSmoothing] = useState(initialEditorPreferences.cursorSmoothing);
-	const [zoomSmoothness, setZoomSmoothness] = useState(1.0);
+	const [zoomSmoothness, setZoomSmoothness] = useState(
+		initialEditorPreferences.zoomSmoothness ?? DEFAULT_ZOOM_SMOOTHNESS,
+	);
 	const [cursorMotionBlur, setCursorMotionBlur] = useState(
 		initialEditorPreferences.cursorMotionBlur,
 	);
@@ -558,8 +561,9 @@ export default function VideoEditor() {
 	const [exportEncodingMode, setExportEncodingMode] = useState<ExportEncodingMode>(
 		initialEditorPreferences.exportEncodingMode,
 	);
-	const [exportBackendPreference, setExportBackendPreference] =
-		useState<ExportBackendPreference>(initialEditorPreferences.exportBackendPreference);
+	const [exportBackendPreference, setExportBackendPreference] = useState<ExportBackendPreference>(
+		initialEditorPreferences.exportBackendPreference,
+	);
 	const [exportPipelineModel, setExportPipelineModel] = useState<ExportPipelineModel>(
 		initialEditorPreferences.exportPipelineModel,
 	);
@@ -899,37 +903,40 @@ export default function VideoEditor() {
 		supportedMp4SourceDimensions.width,
 	]);
 
-	const ensureSupportedMp4SourceDimensions = useCallback(async (frameRate: ExportMp4FrameRate) => {
-		const result = await probeSupportedMp4Dimensions({
-			width: desiredMp4SourceDimensions.width,
-			height: desiredMp4SourceDimensions.height,
-			frameRate,
-			codec: DEFAULT_MP4_CODEC,
-			getBitrate: getSourceQualityBitrate,
-		});
+	const ensureSupportedMp4SourceDimensions = useCallback(
+		async (frameRate: ExportMp4FrameRate) => {
+			const result = await probeSupportedMp4Dimensions({
+				width: desiredMp4SourceDimensions.width,
+				height: desiredMp4SourceDimensions.height,
+				frameRate,
+				codec: DEFAULT_MP4_CODEC,
+				getBitrate: getSourceQualityBitrate,
+			});
 
-		if (!result.encoderPath) {
-			throw new Error(
-				`Video encoding not supported on this system. Tried codec ${DEFAULT_MP4_CODEC} at ${frameRate} FPS up to ${desiredMp4SourceDimensions.width}x${desiredMp4SourceDimensions.height}.`,
-			);
-		}
-
-		setSupportedMp4SourceDimensions((current) => {
-			if (
-				current.width === result.width &&
-				current.height === result.height &&
-				current.capped === result.capped &&
-				current.encoderPath?.codec === result.encoderPath?.codec &&
-				current.encoderPath?.hardwareAcceleration === result.encoderPath?.hardwareAcceleration
-			) {
-				return current;
+			if (!result.encoderPath) {
+				throw new Error(
+					`Video encoding not supported on this system. Tried codec ${DEFAULT_MP4_CODEC} at ${frameRate} FPS up to ${desiredMp4SourceDimensions.width}x${desiredMp4SourceDimensions.height}.`,
+				);
 			}
 
-			return result;
-		});
+			setSupportedMp4SourceDimensions((current) => {
+				if (
+					current.width === result.width &&
+					current.height === result.height &&
+					current.capped === result.capped &&
+					current.encoderPath?.codec === result.encoderPath?.codec &&
+					current.encoderPath?.hardwareAcceleration === result.encoderPath?.hardwareAcceleration
+				) {
+					return current;
+				}
 
-		return result;
-	}, [desiredMp4SourceDimensions.height, desiredMp4SourceDimensions.width]);
+				return result;
+			});
+
+			return result;
+		},
+		[desiredMp4SourceDimensions.height, desiredMp4SourceDimensions.width],
+	);
 
 	useEffect(() => {
 		let cancelled = false;
@@ -1527,9 +1534,9 @@ export default function VideoEditor() {
 		() =>
 			Boolean(
 				currentProjectPath &&
-				currentProjectSnapshot &&
-				lastSavedSnapshot &&
-				!areDeepEqual(currentProjectSnapshot, lastSavedSnapshot),
+					currentProjectSnapshot &&
+					lastSavedSnapshot &&
+					!areDeepEqual(currentProjectSnapshot, lastSavedSnapshot),
 			),
 		[currentProjectPath, currentProjectSnapshot, lastSavedSnapshot],
 	);
@@ -1562,9 +1569,7 @@ export default function VideoEditor() {
 								? prev.shadow
 								: smokeExportConfig.webcamShadow,
 						size:
-							smokeExportConfig.webcamSize === undefined
-								? prev.size
-								: smokeExportConfig.webcamSize,
+							smokeExportConfig.webcamSize === undefined ? prev.size : smokeExportConfig.webcamSize,
 					}));
 					setError(null);
 					return;
@@ -1623,7 +1628,6 @@ export default function VideoEditor() {
 		}
 
 		loadInitialData();
-
 	}, [applyLoadedProject, smokeExportConfig.enabled, smokeExportConfig.inputPath]);
 
 	useEffect(() => {
@@ -2061,10 +2065,7 @@ export default function VideoEditor() {
 				console.warn("Unable to load cursor telemetry:", telemetryError);
 				if (mounted) {
 					setCursorTelemetry([]);
-					if (
-						pendingFreshRecordingAutoZoomPathRef.current === videoPath &&
-						retryAttempts < 12
-					) {
+					if (pendingFreshRecordingAutoZoomPathRef.current === videoPath && retryAttempts < 12) {
 						retryAttempts += 1;
 						pendingTelemetryRetryTimeoutRef.current = window.setTimeout(() => {
 							pendingTelemetryRetryTimeoutRef.current = null;
@@ -2175,7 +2176,15 @@ export default function VideoEditor() {
 		autoSuggestedVideoPathRef.current = videoPath;
 		pendingFreshRecordingAutoZoomPathRef.current = null;
 		setAutoSuggestZoomsTrigger((value) => value + 1);
-	}, [videoPath, loading, isPreviewReady, duration, effectiveCursorTelemetry.length, loopCursor, zoomRegions.length]);
+	}, [
+		videoPath,
+		loading,
+		isPreviewReady,
+		duration,
+		effectiveCursorTelemetry.length,
+		loopCursor,
+		zoomRegions.length,
+	]);
 
 	function togglePlayPause() {
 		const playback = videoPlaybackRef.current;
@@ -2273,10 +2282,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-						...region,
-						startMs: Math.round(span.start),
-						endMs: Math.round(span.end),
-					}
+							...region,
+							startMs: Math.round(span.start),
+							endMs: Math.round(span.end),
+						}
 					: region,
 			),
 		);
@@ -2287,10 +2296,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-						...region,
-						startMs: Math.round(span.start),
-						endMs: Math.round(span.end),
-					}
+							...region,
+							startMs: Math.round(span.start),
+							endMs: Math.round(span.end),
+						}
 					: region,
 			),
 		);
@@ -2301,9 +2310,9 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-						...region,
-						focus: clampFocusToDepth(focus, region.depth),
-					}
+							...region,
+							focus: clampFocusToDepth(focus, region.depth),
+						}
 					: region,
 			),
 		);
@@ -2316,10 +2325,10 @@ export default function VideoEditor() {
 				prev.map((region) =>
 					region.id === selectedZoomId
 						? {
-							...region,
-							depth,
-							focus: clampFocusToDepth(region.focus, depth),
-						}
+								...region,
+								depth,
+								focus: clampFocusToDepth(region.focus, depth),
+							}
 						: region,
 				),
 			);
@@ -2356,67 +2365,69 @@ export default function VideoEditor() {
 		}
 	}, []);
 
-	const handleClipSplit = useCallback(
-		(splitMs: number) => {
-			setClipRegions((prev) => {
-				const target = prev.find((c) => splitMs > c.startMs && splitMs < c.endMs);
-				if (!target) return prev;
-				const leftId = `clip-${nextClipIdRef.current++}`;
-				const rightId = `clip-${nextClipIdRef.current++}`;
-				const left: ClipRegion = { id: leftId, startMs: target.startMs, endMs: Math.round(splitMs), speed: target.speed };
-				const right: ClipRegion = { id: rightId, startMs: Math.round(splitMs), endMs: target.endMs, speed: target.speed };
-				return prev.flatMap((c) => (c.id === target.id ? [left, right] : [c]));
-			});
-		},
-		[],
-	);
+	const handleClipSplit = useCallback((splitMs: number) => {
+		setClipRegions((prev) => {
+			const target = prev.find((c) => splitMs > c.startMs && splitMs < c.endMs);
+			if (!target) return prev;
+			const leftId = `clip-${nextClipIdRef.current++}`;
+			const rightId = `clip-${nextClipIdRef.current++}`;
+			const left: ClipRegion = {
+				id: leftId,
+				startMs: target.startMs,
+				endMs: Math.round(splitMs),
+				speed: target.speed,
+			};
+			const right: ClipRegion = {
+				id: rightId,
+				startMs: Math.round(splitMs),
+				endMs: target.endMs,
+				speed: target.speed,
+			};
+			return prev.flatMap((c) => (c.id === target.id ? [left, right] : [c]));
+		});
+	}, []);
 
-	const handleClipSpanChange = useCallback((id: string, span: Span) => {
-		const oldClip = clipRegions.find((c) => c.id === id);
-		const newStart = Math.round(span.start);
-		const newEnd = Math.round(span.end);
+	const handleClipSpanChange = useCallback(
+		(id: string, span: Span) => {
+			const oldClip = clipRegions.find((c) => c.id === id);
+			const newStart = Math.round(span.start);
+			const newEnd = Math.round(span.end);
 
-		if (oldClip) {
-			const startDelta = newStart - oldClip.startMs;
-			const endDelta = newEnd - oldClip.endMs;
-			const isMove = Math.abs(startDelta - endDelta) < 1 && Math.abs(startDelta) > 0;
+			if (oldClip) {
+				const startDelta = newStart - oldClip.startMs;
+				const endDelta = newEnd - oldClip.endMs;
+				const isMove = Math.abs(startDelta - endDelta) < 1 && Math.abs(startDelta) > 0;
 
-			if (isMove) {
-				const delta = startDelta;
-				setZoomRegions((prev) =>
-					prev.map((zoom) => {
-						const overlaps = zoom.startMs < oldClip.endMs && zoom.endMs > oldClip.startMs;
-						if (overlaps) {
-							return {
-								...zoom,
-								startMs: zoom.startMs + delta,
-								endMs: zoom.endMs + delta,
-							};
-						}
-						return zoom;
-					}),
-				);
+				if (isMove) {
+					const delta = startDelta;
+					setZoomRegions((prev) =>
+						prev.map((zoom) => {
+							const overlaps = zoom.startMs < oldClip.endMs && zoom.endMs > oldClip.startMs;
+							if (overlaps) {
+								return {
+									...zoom,
+									startMs: zoom.startMs + delta,
+									endMs: zoom.endMs + delta,
+								};
+							}
+							return zoom;
+						}),
+					);
+				}
 			}
-		}
 
-		setClipRegions((prev) =>
-			prev.map((clip) =>
-				clip.id === id
-					? { ...clip, startMs: newStart, endMs: newEnd }
-					: clip,
-			),
-		);
-	}, [clipRegions]);
+			setClipRegions((prev) =>
+				prev.map((clip) => (clip.id === id ? { ...clip, startMs: newStart, endMs: newEnd } : clip)),
+			);
+		},
+		[clipRegions],
+	);
 
 	const handleClipSpeedChange = useCallback(
 		(speed: number) => {
 			if (!selectedClipId) return;
 			setClipRegions((prev) =>
-				prev.map((clip) =>
-					clip.id === selectedClipId
-						? { ...clip, speed }
-						: clip,
-				),
+				prev.map((clip) => (clip.id === selectedClipId ? { ...clip, speed } : clip)),
 			);
 		},
 		[selectedClipId],
@@ -2462,10 +2473,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-						...region,
-						startMs: Math.round(span.start),
-						endMs: Math.round(span.end),
-					}
+							...region,
+							startMs: Math.round(span.start),
+							endMs: Math.round(span.end),
+						}
 					: region,
 			),
 		);
@@ -2513,10 +2524,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-						...region,
-						startMs: Math.round(span.start),
-						endMs: Math.round(span.end),
-					}
+							...region,
+							startMs: Math.round(span.start),
+							endMs: Math.round(span.end),
+						}
 					: region,
 			),
 		);
@@ -2567,10 +2578,10 @@ export default function VideoEditor() {
 			prev.map((region) =>
 				region.id === id
 					? {
-						...region,
-						startMs: Math.round(span.start),
-						endMs: Math.round(span.end),
-					}
+							...region,
+							startMs: Math.round(span.start),
+							endMs: Math.round(span.end),
+						}
 					: region,
 			),
 		);
@@ -2981,15 +2992,9 @@ export default function VideoEditor() {
 
 		for (const audio of sourceAudioElementsRef.current.values()) {
 			const audioDuration = Number.isFinite(audio.duration) ? audio.duration : null;
-			const startDelaySeconds = estimateCompanionAudioStartDelaySeconds(
-				duration,
-				audioDuration,
-			);
+			const startDelaySeconds = estimateCompanionAudioStartDelaySeconds(duration, audioDuration);
 			const beforeAudioStart = currentTime + 0.001 < startDelaySeconds;
-			const targetTime = clampMediaTimeToDuration(
-				currentTime - startDelaySeconds,
-				audioDuration,
-			);
+			const targetTime = clampMediaTimeToDuration(currentTime - startDelaySeconds, audioDuration);
 
 			if (timelineJumped || Math.abs(audio.currentTime - targetTime) > driftThreshold) {
 				try {
@@ -3181,7 +3186,7 @@ export default function VideoEditor() {
 								? await window.electronAPI.writeExportedVideoToPath(
 										arrayBuffer,
 										smokeExportConfig.outputPath,
-								  )
+									)
 								: await window.electronAPI.saveExportedVideo(arrayBuffer, fileName);
 
 						if (saveResult.canceled) {
@@ -3224,23 +3229,22 @@ export default function VideoEditor() {
 					// MP4 Export
 					const quality = settings.quality ?? exportQuality;
 					const encodingMode = smokeExportConfig.enabled
-						? smokeExportConfig.encodingMode ?? settings.encodingMode ?? exportEncodingMode
-						: settings.encodingMode ?? exportEncodingMode;
+						? (smokeExportConfig.encodingMode ?? settings.encodingMode ?? exportEncodingMode)
+						: (settings.encodingMode ?? exportEncodingMode);
 					const selectedMp4FrameRate = settings.mp4FrameRate ?? mp4FrameRate;
 					const pipelineModel = smokeExportConfig.enabled
-						? smokeExportConfig.pipelineModel ??
-							(smokeExportConfig.useNativeExport ? "modern" : "legacy")
-						: settings.pipelineModel ?? exportPipelineModel;
+						? (smokeExportConfig.pipelineModel ??
+							(smokeExportConfig.useNativeExport ? "modern" : "legacy"))
+						: (settings.pipelineModel ?? exportPipelineModel);
 					const backendPreference =
 						pipelineModel === "legacy"
 							? "webcodecs"
 							: smokeExportConfig.enabled
-								? smokeExportConfig.backendPreference ??
-									(smokeExportConfig.useNativeExport ? "breeze" : "webcodecs")
+								? (smokeExportConfig.backendPreference ??
+									(smokeExportConfig.useNativeExport ? "breeze" : "webcodecs"))
 								: "auto";
-					const supportedSourceDimensions = await ensureSupportedMp4SourceDimensions(
-						selectedMp4FrameRate,
-					);
+					const supportedSourceDimensions =
+						await ensureSupportedMp4SourceDimensions(selectedMp4FrameRate);
 					const { width: exportWidth, height: exportHeight } = calculateMp4ExportDimensions(
 						supportedSourceDimensions.width,
 						supportedSourceDimensions.height,
@@ -3335,9 +3339,9 @@ export default function VideoEditor() {
 					const exporter =
 						pipelineModel === "modern"
 							? new ModernVideoExporter({
-								...exporterConfig,
-								backendPreference,
-							})
+									...exporterConfig,
+									backendPreference,
+								})
 							: new VideoExporter(exporterConfig);
 
 					exporterRef.current = exporter;
@@ -3358,7 +3362,7 @@ export default function VideoEditor() {
 								? await window.electronAPI.writeExportedVideoToPath(
 										arrayBuffer,
 										smokeExportConfig.outputPath,
-								  )
+									)
 								: await window.electronAPI.saveExportedVideo(arrayBuffer, fileName);
 
 						if (saveResult.canceled) {
@@ -3624,12 +3628,12 @@ export default function VideoEditor() {
 			gifConfig:
 				exportFormat === "gif"
 					? {
-						frameRate: gifFrameRate,
-						loop: gifLoop,
-						sizePreset: gifSizePreset,
-						width: gifDimensions.width,
-						height: gifDimensions.height,
-					}
+							frameRate: gifFrameRate,
+							loop: gifLoop,
+							sizePreset: gifSizePreset,
+							width: gifDimensions.width,
+							height: gifDimensions.height,
+						}
 					: undefined,
 		};
 
@@ -3766,12 +3770,16 @@ export default function VideoEditor() {
 					? exportProgress.renderProgress
 					: (exportProgress?.percentage ?? 99),
 				99,
-		  )
+			)
 		: null;
 	const isLightningExportInProgress =
-		exportFormat === "mp4" && exportPipelineModel === "modern" && (isExporting || exportProgress !== null);
+		exportFormat === "mp4" &&
+		exportPipelineModel === "modern" &&
+		(isExporting || exportProgress !== null);
 	const isLegacyExportInProgress =
-		exportFormat === "mp4" && exportPipelineModel === "legacy" && (isExporting || exportProgress !== null);
+		exportFormat === "mp4" &&
+		exportPipelineModel === "legacy" &&
+		(isExporting || exportProgress !== null);
 	const exportRenderSpeedLabel =
 		typeof exportProgress?.renderFps === "number" &&
 		Number.isFinite(exportProgress.renderFps) &&
@@ -3790,21 +3798,13 @@ export default function VideoEditor() {
 		}
 
 		const rendererLabel =
-			renderBackend === "webgpu"
-				? "WebGPU"
-				: renderBackend === "webgl"
-					? "WebGL"
-					: null;
+			renderBackend === "webgpu" ? "WebGPU" : renderBackend === "webgl" ? "WebGL" : null;
 		const encoderLabel =
-			encodeBackend === "ffmpeg"
-				? "Breeze"
-				: encodeBackend === "webcodecs"
-					? "WebCodecs"
-					: null;
+			encodeBackend === "ffmpeg" ? "Breeze" : encodeBackend === "webcodecs" ? "WebCodecs" : null;
 		const pathLabel =
 			rendererLabel && encoderLabel
 				? `${rendererLabel} + ${encoderLabel}`
-				: rendererLabel ?? encoderLabel;
+				: (rendererLabel ?? encoderLabel);
 
 		if (!pathLabel) {
 			return encoderName ?? null;
@@ -3820,8 +3820,8 @@ export default function VideoEditor() {
 						percent: Math.round(exportFinalizingProgress ?? 99),
 					})
 				: t("editor.exportStatus.completePercent", "{{percent}}% complete", {
-					percent: Math.round(exportProgress.percentage),
-				})
+						percent: Math.round(exportProgress.percentage),
+					})
 		: t("editor.exportStatus.preparing", "Preparing export...");
 
 	const projectBrowser = (
@@ -4019,7 +4019,7 @@ export default function VideoEditor() {
 											<div
 												className="h-full bg-[#2563EB] transition-all duration-300 ease-out"
 												style={{
-													width: `${Math.min(exportFinalizingProgress ?? (exportProgress?.percentage ?? 8), 100)}%`,
+													width: `${Math.min(exportFinalizingProgress ?? exportProgress?.percentage ?? 8, 100)}%`,
 												}}
 											/>
 										)}
@@ -4040,7 +4040,9 @@ export default function VideoEditor() {
 									{exportRuntimeLabel ? (
 										<p className="mt-1 text-[11px] text-slate-500">Path: {exportRuntimeLabel}</p>
 									) : null}
-									<p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-slate-400">{exportError}</p>
+									<p className="mt-1 whitespace-pre-line text-xs leading-relaxed text-slate-400">
+										{exportError}
+									</p>
 									<div className="mt-4 flex gap-2">
 										{hasPendingExportSave ? (
 											<Button
